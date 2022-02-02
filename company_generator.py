@@ -66,21 +66,27 @@ class CompanyGenerator:
     def _split_re():
         split_re_pat = (
             f"^{re.escape(SpecialTokens.BOS_TOKEN)}(?P<company>.+?)"
-            f"(?:{re.escape(SpecialTokens.IND_SEP)}(?P<industry>.+?))?"
-            f"{re.escape(SpecialTokens.TEXT_SEP)}(?P<text>.+?)"
+            f"(?:{re.escape(SpecialTokens.GNR_SEP)}(?P<industry>.+?))?"
+            f"(?:{re.escape(SpecialTokens.SNG_SEP)}(?P<song>.+?))?"
+            f"{re.escape(SpecialTokens.LRC_SEP)}(?P<text>.+?)"
             f"{re.escape(SpecialTokens.EOS_TOKEN)}*"
         )
         split_re = re.compile(split_re_pat, flags=re.MULTILINE | re.DOTALL)
         return split_re
 
-    def evaluate_creativity(self, num_to_generate, max_iteration, max_length=512):
-        _, stats = self.generate_companies(num=num_to_generate,
-                                           max_iterations=max_iteration,
-                                           generation_args=dict(top_k=300,
-                                                                num_return_sequences=48,
-                                                                max_length=min(max_length, 512),
-                                                                do_sample=True)
-                                           )
+    # TODO add "generation args" and pass with **
+    def evaluate_creativity(self, num_to_generate, max_iteration, max_length=2048):
+        gen, stats = self.generate_companies(num=num_to_generate,
+                                             max_iterations=max_iteration,
+                                             generation_args=dict(top_k=300,
+                                                                  num_return_sequences=48,
+                                                                  max_length=min(max_length, 2048),
+                                                                  do_sample=True)
+                                             )
+        logger.info(f"Example 1: {gen[0]}")
+        logger.info(f"Example 2: {gen[1]}")
+        logger.info(f"Example 3: {gen[2]}")
+        logger.info(f"Example 4: {gen[3]}")
         # calculate weighted average from generation stats
         score = (stats.num_returned + sum([cand.score for cand in stats.viable_candidates])) / stats.num_items_considered
 
@@ -95,7 +101,7 @@ class CompanyGenerator:
             num=100,
             max_iterations=10,
             generation_args: dict = {},
-            filter_generated=True,
+            filter_generated=False,
             dedupe_titles=True,
             user_filter=None,
             min_text_words=3,
@@ -123,6 +129,7 @@ class CompanyGenerator:
         while len(ret) < num and num_iteration < max_iterations:
             current_ret = []
             num_iteration += 1
+            print(num_iteration)
             stats.num_iterations += 1
 
             # GENERATION
@@ -156,9 +163,8 @@ class CompanyGenerator:
                 )
 
                 if filter_generated:
-                    stripped_company = re.sub(r"('inc|ltd|llp|')$", "", company)
 
-                    if self.blacklist and self.blacklist.contains(stripped_company):
+                    if self.blacklist and self.blacklist.contains(company):
                         stats.num_blacklist_filtered += 1
                         continue
 
@@ -176,10 +182,10 @@ class CompanyGenerator:
                         stats.viable_candidates.append(GeneratedCompanyCandidate(0.5, generated_company))
                         continue
 
-                    if stripped_company.lower() not in text.lower():
-                        stats.num_text_missing_company += 1
-                        stats.viable_candidates.append(GeneratedCompanyCandidate(0.8, generated_company))
-                        continue
+                    # if company.lower() not in text.lower():
+                    #     stats.num_text_missing_company += 1
+                    #     stats.viable_candidates.append(GeneratedCompanyCandidate(0.8, generated_company))
+                    #     continue
 
                     if user_filter and not user_filter(generated_company):
                         stats.num_user_filtered += 1

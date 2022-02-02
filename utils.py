@@ -24,8 +24,9 @@ class SpecialTokens:
     EOS_TOKEN = "<|eog|>"
     PAD = "<|pad|>"
 
-    IND_SEP = "<|ind|>"  # industry
-    TEXT_SEP = "<|txt|>"  # text
+    GNR_SEP = "<|gnr|>"  # genre
+    SNG_SEP = "<|sng|>"  # song name
+    LRC_SEP = "<|lrc|>"  # lyrics
 
     @classmethod
     def special_tokens_dict(cls):
@@ -33,7 +34,7 @@ class SpecialTokens:
             "bos_token": cls.BOS_TOKEN,
             "eos_token": cls.EOS_TOKEN,
             "pad_token": cls.PAD,
-            "additional_special_tokens": [cls.IND_SEP, cls.TEXT_SEP],
+            "additional_special_tokens": [cls.GNR_SEP, cls.LRC_SEP],
         }
 
 

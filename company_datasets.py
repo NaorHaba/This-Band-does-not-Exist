@@ -94,7 +94,7 @@ def _in_split_range(split_range, starting_position):
 
 
 def row_count(file):
-    df = pd.read_csv(file, index_col=0, usecols=['industry'], lineterminator='\n')
+    df = pd.read_csv(file, index_col=0, usecols=['Artist'], lineterminator='\n')
     return df.shape[0]
 
 
@@ -153,11 +153,10 @@ class LineByLineTextDataset(Dataset):
 
 class CSVDataset(Dataset):
     def __init__(
-        self, tokenizer: PreTrainedTokenizer, args, file_path: str, splits=(1.0, ), split_idx=0, text_max_length=1000
+        self, tokenizer: PreTrainedTokenizer, args, file_path: str, splits=(1.0, ), split_idx=0
     ):
         """Reads the data from a csv file using pandas module. requires csv ordered by index starting from 0"""
         self.block_size = args.block_size
-        self.text_max_length = text_max_length
 
         assert os.path.isfile(file_path) or os.path.islink(file_path)
         directory, filename = os.path.split(file_path)
@@ -190,7 +189,7 @@ class CSVDataset(Dataset):
                 f"loading csv file with %d number of rows", total_rows
             )
 
-            with pd.read_csv(file_path, chunksize=50000, index_col=0, lineterminator='\n') as reader:
+            with pd.read_csv(file_path, chunksize=15000, index_col=0, lineterminator='\n') as reader:
                 reached_first = False
                 for i, chunk in enumerate(reader):
                     print(f"Reading chunk {i}...")
@@ -209,16 +208,15 @@ class CSVDataset(Dataset):
 
     def _make_examples(self, tokenizer, data: pd.DataFrame):
 
-        def clean_decode_text(row):
-            txt = row['text']
-            txt = clean_text(txt, self.text_max_length)
+        def encode_songs(row):
 
-            company_name = row['company_name'].replace('-', ' ')  # clean company name seperator '-'
+            return ''.join([SpecialTokens.BOS_TOKEN, row['Artist'],
+                            SpecialTokens.GNR_SEP, row['Genre'],
+                            SpecialTokens.SNG_SEP, row['Song'],
+                            SpecialTokens.LRC_SEP, row['Lyrics'],
+                            SpecialTokens.EOS_TOKEN])
 
-            return ''.join([SpecialTokens.BOS_TOKEN, company_name, SpecialTokens.IND_SEP, row['industry'],
-                            SpecialTokens.TEXT_SEP, txt, SpecialTokens.EOS_TOKEN])
-
-        text_batch = data.apply(clean_decode_text, axis=1).tolist()
+        text_batch = data.apply(encode_songs, axis=1).tolist()
         return tokenizer(text_batch, add_special_tokens=True, max_length=self.block_size, truncation=True)["input_ids"]
 
     def __len__(self):

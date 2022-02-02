@@ -296,17 +296,17 @@ def evaluate(args, model: PreTrainedModel, tokenizer: PreTrainedTokenizer, prefi
 
     if args.eval_creativity_blacklist:
 
-        print(
+        logger.info(
             f"Evaluating creativity over {args.num_eval_creativity} words with {args.eval_creativity_max_iterations} iterations"
         )
         s = time.time()
         generator = CompanyGenerator(model, tokenizer, blacklist_path=args.eval_creativity_blacklist,
-                                     industries_path=args.eval_creativity_industries,
+                                     industries_path=args.eval_creativity_genres,
                                      device=model.device)
         result.update(generator.evaluate_creativity(args.num_eval_creativity,
                                                     args.eval_creativity_max_iterations,
                                                     max_length=args.block_size))
-        print(f"Done evaluating creativity in {time.time() - s}s")
+        logger.info(f"Done evaluating creativity in {time.time() - s}s")
 
     output_eval_file = os.path.join(eval_output_dir, prefix, "eval_results.txt")
     with open(output_eval_file, "w") as writer:
@@ -315,7 +315,7 @@ def evaluate(args, model: PreTrainedModel, tokenizer: PreTrainedTokenizer, prefi
             logger.info("  %s = %s", key, str(result[key]))
             writer.write("%s = %s\n" % (key, str(result[key])))
 
-    print(result)
+    logger.info(result)
     return result
 
 
@@ -357,7 +357,7 @@ def main():
         "--eval_creativity_blacklist", type=str, help="Evaluate creativity of generation using a blacklist"
     )
     parser.add_argument(
-        "--eval_creativity_industries", type=str, help="Evaluate creativity of generation using an industry set"
+        "--eval_creativity_genres", type=str, help="Evaluate creativity of generation using a genre set"
     )
     parser.add_argument("--num_eval_creativity", type=int, help="Number of items to run eval creativity over")
     parser.add_argument("--eval_creativity_max_iterations", type=int, help="Batch size for eval creativity")
