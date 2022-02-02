@@ -210,10 +210,10 @@ class CSVDataset(Dataset):
 
         def encode_songs(row):
 
-            return ''.join([SpecialTokens.BOS_TOKEN, row['Artist'],
-                            SpecialTokens.GNR_SEP, row['Genre'],
-                            SpecialTokens.SNG_SEP, row['Song'],
-                            SpecialTokens.LRC_SEP, row['Lyrics'],
+            return ''.join([SpecialTokens.BOS_TOKEN, row['Artist'].strip(),
+                            SpecialTokens.GNR_SEP, row['Genre'].strip(),
+                            SpecialTokens.SNG_SEP, row['Song'].strip(),
+                            SpecialTokens.LRC_SEP, row['Lyrics'].strip(),
                             SpecialTokens.EOS_TOKEN])
 
         text_batch = data.apply(encode_songs, axis=1).tolist()

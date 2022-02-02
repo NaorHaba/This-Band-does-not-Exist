@@ -43,8 +43,8 @@ from transformers import (
     get_linear_schedule_with_warmup,
 )
 
-from company_generator import CompanyGenerator
-from company_datasets import load_and_cache_examples, _sorted_checkpoints, _rotate_checkpoints
+from band_generator import BandGenerator
+from band_datasets import load_and_cache_examples, _sorted_checkpoints, _rotate_checkpoints
 from utils import MODEL_CLASSES, SpecialTokens
 
 try:
@@ -300,9 +300,9 @@ def evaluate(args, model: PreTrainedModel, tokenizer: PreTrainedTokenizer, prefi
             f"Evaluating creativity over {args.num_eval_creativity} words with {args.eval_creativity_max_iterations} iterations"
         )
         s = time.time()
-        generator = CompanyGenerator(model, tokenizer, blacklist_path=args.eval_creativity_blacklist,
-                                     industries_path=args.eval_creativity_genres,
-                                     device=model.device)
+        generator = BandGenerator(model, tokenizer, blacklist_path=args.eval_creativity_blacklist,
+                                  industries_path=args.eval_creativity_genres,
+                                  device=model.device)
         result.update(generator.evaluate_creativity(args.num_eval_creativity,
                                                     args.eval_creativity_max_iterations,
                                                     max_length=args.block_size))

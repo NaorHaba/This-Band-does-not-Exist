@@ -32,8 +32,8 @@ class WeakFakeGenerator:
     def create_tfidf_model(data):
         print('making industry documents... ', end='')
         group = data.groupby(['industry'])['text'].apply(lambda x: ' '.join(x)).reset_index()
-        texts = group.text
-        industries = group.industry.to_list()
+        texts = group.lyrics
+        industries = group.genre.to_list()
         texts = [clean_text(text).split() for text in texts]
         print('done.')
         print('making dictionary... ', end='')
@@ -60,7 +60,7 @@ class WeakFakeGenerator:
 
     def generate(self, data, tfidf=True, save_path=None):
         new_data = data.copy()
-        new_data['text'] = new_data.industry.apply(lambda ind: self.generate_from_industry(ind, tfidf))
+        new_data['text'] = new_data.genre.apply(lambda ind: self.generate_from_industry(ind, tfidf))
         if save_path:
             new_data.to_csv(save_path)
         return new_data

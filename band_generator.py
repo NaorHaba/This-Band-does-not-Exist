@@ -8,7 +8,7 @@ import torch
 import logging
 from tqdm import tqdm
 
-from company_datasets import Blacklist
+from band_datasets import Blacklist
 from transformers import AutoModelWithLMHead, AutoTokenizer
 
 import os
@@ -19,7 +19,7 @@ from utils import SpecialTokens
 logger = logging.getLogger(__name__)
 
 
-class CompanyGenerator:
+class BandGenerator:
     def __init__(self, model, tokenizer=None, blacklist_path=None, industries_path=None, device=None):
         assert tokenizer or isinstance(model, str), "if model is not a model path, tokenizer should be provided"
 
@@ -32,9 +32,9 @@ class CompanyGenerator:
 
         # LOAD BLACKLIST
         if blacklist_path and os.path.isfile(blacklist_path):
-            logger.info(f"Loading company blacklist from {blacklist_path}...")
+            logger.info(f"Loading blacklist from {blacklist_path}...")
             self.blacklist = Blacklist.load(blacklist_path)
-            logger.info(f"Loaded {len(self.blacklist)} companies to blacklist")
+            logger.info(f"Loaded {len(self.blacklist)} band names to blacklist")
         else:
             self.blacklist = None
 
@@ -65,28 +65,31 @@ class CompanyGenerator:
     @staticmethod
     def _split_re():
         split_re_pat = (
-            f"^{re.escape(SpecialTokens.BOS_TOKEN)}(?P<company>.+?)"
-            f"(?:{re.escape(SpecialTokens.GNR_SEP)}(?P<industry>.+?))?"
-            f"(?:{re.escape(SpecialTokens.SNG_SEP)}(?P<song>.+?))?"
-            f"{re.escape(SpecialTokens.LRC_SEP)}(?P<text>.+?)"
+            f"^{re.escape(SpecialTokens.BOS_TOKEN)}(?P<band>.+?)"
+            f"(?:{re.escape(SpecialTokens.GNR_SEP)}(?P<genre>.+?))"
+            f"(?:{re.escape(SpecialTokens.SNG_SEP)}(?P<song>.+?))"
+            f"{re.escape(SpecialTokens.LRC_SEP)}(?P<lyrics>.+?)"
             f"{re.escape(SpecialTokens.EOS_TOKEN)}*"
         )
         split_re = re.compile(split_re_pat, flags=re.MULTILINE | re.DOTALL)
         return split_re
 
     # TODO add "generation args" and pass with **
-    def evaluate_creativity(self, num_to_generate, max_iteration, max_length=2048):
-        gen, stats = self.generate_companies(num=num_to_generate,
-                                             max_iterations=max_iteration,
-                                             generation_args=dict(top_k=300,
-                                                                  num_return_sequences=48,
-                                                                  max_length=min(max_length, 2048),
+    def evaluate_creativity(self, num_to_generate, max_iteration, max_length=1024):
+        gen, stats = self.generate_bands(num=num_to_generate,
+                                         max_iterations=max_iteration,
+                                         generation_args=dict(top_k=300,
+                                                                  num_return_sequences=12,
+                                                                  max_length=min(max_length, self.tokenizer.model_max_length),
                                                                   do_sample=True)
-                                             )
-        logger.info(f"Example 1: {gen[0]}")
-        logger.info(f"Example 2: {gen[1]}")
-        logger.info(f"Example 3: {gen[2]}")
-        logger.info(f"Example 4: {gen[3]}")
+                                         )
+        try:
+            logger.info(f"Example 1: {gen[0]}")
+            logger.info(f"Example 2: {gen[1]}")
+            logger.info(f"Example 3: {gen[2]}")
+            logger.info(f"Example 4: {gen[3]}")
+        except:
+            pass
         # calculate weighted average from generation stats
         score = (stats.num_returned + sum([cand.score for cand in stats.viable_candidates])) / stats.num_items_considered
 
@@ -95,7 +98,7 @@ class CompanyGenerator:
             "success_rate": stats.num_returned / stats.num_items_considered,
         }
 
-    def generate_companies(
+    def generate_bands(
             self,
             prefix=SpecialTokens.BOS_TOKEN,
             num=100,
@@ -129,7 +132,6 @@ class CompanyGenerator:
         while len(ret) < num and num_iteration < max_iterations:
             current_ret = []
             num_iteration += 1
-            print(num_iteration)
             stats.num_iterations += 1
 
             # GENERATION
@@ -152,51 +154,52 @@ class CompanyGenerator:
                     stats.num_failed_match += 1
                     continue
 
-                company = m.group("company")  # company name
-                industry = m.group("industry")  # industry
-                text = m.group("text")  # text
+                band = m.group("band")  # band name
+                genre = m.group("genre")  # genre
+                song = m.group("song")  # genre
+                lyrics = m.group("lyrics")  # lyrics
 
-                generated_company = GeneratedCompany(
-                    company=company and company.strip(),
-                    industry=industry and industry.strip(),
-                    text=text and text.strip()
+                generated_band = GeneratedBand(
+                    band=band and band.strip(),
+                    genre=genre and genre.strip(),
+                    lyrics=lyrics and lyrics
                 )
 
                 if filter_generated:
 
-                    if self.blacklist and self.blacklist.contains(company):
+                    if self.blacklist and self.blacklist.contains(band):
                         stats.num_blacklist_filtered += 1
                         continue
 
-                    if dedupe_titles and company.strip().lower() in seen_companies:
+                    if dedupe_titles and band.strip().lower() in seen_companies:
                         stats.num_seen_filtered += 1
                         continue
 
-                    if len(text.split()) < min_text_words:
+                    if len(lyrics.split()) < min_text_words:
                         stats.num_short_texts += 1
-                        stats.viable_candidates.append(GeneratedCompanyCandidate(0.2, generated_company))
+                        stats.viable_candidates.append(GeneratedBandCandidate(0.2, generated_band))
                         continue
 
-                    if self.industries and industry not in self.industries:
-                        stats.num_industry_filter += 1
-                        stats.viable_candidates.append(GeneratedCompanyCandidate(0.5, generated_company))
+                    if self.industries and genre not in self.industries:
+                        stats.num_genre_filter += 1
+                        stats.viable_candidates.append(GeneratedBandCandidate(0.5, generated_band))
                         continue
 
-                    # if company.lower() not in text.lower():
+                    # if band.lower() not in lyrics.lower():
                     #     stats.num_text_missing_company += 1
-                    #     stats.viable_candidates.append(GeneratedCompanyCandidate(0.8, generated_company))
+                    #     stats.viable_candidates.append(GeneratedCompanyCandidate(0.8, generated_band))
                     #     continue
 
-                    if user_filter and not user_filter(generated_company):
+                    if user_filter and not user_filter(generated_band):
                         stats.num_user_filtered += 1
                         continue
 
                     t.update()
-                    current_ret.append(generated_company)
-                    seen_companies.add(company.strip().lower())
+                    current_ret.append(generated_band)
+                    seen_companies.add(band.strip().lower())
                 else:
                     t.update()
-                    current_ret.append(generated_company)
+                    current_ret.append(generated_band)
 
             if save_path:
                 if not os.path.isfile(save_path):
@@ -205,10 +208,10 @@ class CompanyGenerator:
                 with open(save_path, 'a') as csv_file:
                     writer = csv.writer(csv_file)
                     if os.stat(save_path).st_size == 0:
-                        columns = ['company_name', 'industry', 'text']
+                        columns = ['company_name', 'genre', 'lyrics']
                         writer.writerow(columns)
                     generated_companies = current_ret
-                    rows = [[c.company, c.industry, c.text] for c in generated_companies]
+                    rows = [[c.band, c.genre, c.lyrics] for c in generated_companies]
                     writer.writerows(rows)
 
             ret += current_ret
@@ -220,24 +223,24 @@ class CompanyGenerator:
 
 
 @dataclass
-class GeneratedCompany:
-    company: str
-    industry: str
-    text: str
+class GeneratedBand:
+    band: str
+    genre: str
+    lyrics: str
 
     @classmethod
-    def print_companies(cls, companies, f=sys.stdout):
-        for company in companies:
-            company_str = [company.company, f"/{company.industry}/"]
-            print(" ".join(company_str), file=f)
-            print(f"\t{company.text}", file=f)
+    def print_bands(cls, bands, f=sys.stdout):
+        for band in bands:
+            band_str = [band.band, f"/{band.genre}/"]
+            print(" ".join(band_str), file=f)
+            print(f"\t{band.lyrics}", file=f)
             print("----------------", file=f)
 
 
 @dataclass
-class GeneratedCompanyCandidate:
+class GeneratedBandCandidate:
     score: float
-    candidate: GeneratedCompany
+    candidate: GeneratedBand
 
 
 @dataclass
@@ -248,10 +251,10 @@ class GenerationStats:
     num_failed_match: int = 0
     num_blacklist_filtered: int = 0
     num_seen_filtered: int = 0
-    num_industry_filter: int = 0
+    num_genre_filter: int = 0
 
     num_short_texts: int = 0
-    num_text_missing_company: int = 0
+    num_text_missing_band: int = 0
 
     num_user_filtered: int = 0
     num_returned: int = 0
@@ -270,7 +273,7 @@ class GenerationStats:
                     ("blacklist_filtered", self.num_blacklist_filtered),
                     ("seen_filtered", self.num_seen_filtered),
                     ("short_definitions", self.num_short_texts),
-                    ("text_missing_company", self.num_text_missing_company),
+                    ("text_missing_company", self.num_text_missing_band),
                     ("user_filtered", self.num_user_filtered),
                     ("returned", self.num_returned),
                 )

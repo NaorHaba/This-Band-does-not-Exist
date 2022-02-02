@@ -34,7 +34,7 @@ class SpecialTokens:
             "bos_token": cls.BOS_TOKEN,
             "eos_token": cls.EOS_TOKEN,
             "pad_token": cls.PAD,
-            "additional_special_tokens": [cls.GNR_SEP, cls.LRC_SEP],
+            "additional_special_tokens": [cls.GNR_SEP, cls.SNG_SEP, cls.LRC_SEP],
         }
 
 
