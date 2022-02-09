@@ -302,7 +302,7 @@ def evaluate(args, model: PreTrainedModel, tokenizer: PreTrainedTokenizer, prefi
         )
         s = time.time()
         generator = BandGenerator(model, tokenizer, blacklist_path=args.eval_creativity_blacklist,
-                                  industries_path=args.eval_creativity_genres,
+                                  genres_path=args.eval_creativity_genres,
                                   device=model.device)
         result.update(generator.evaluate_creativity(args.num_eval_creativity,
                                                     args.eval_creativity_max_iterations,

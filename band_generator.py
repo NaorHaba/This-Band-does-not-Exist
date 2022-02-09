@@ -1,3 +1,4 @@
+import abc
 import pickle
 import re
 import sys
@@ -16,51 +17,80 @@ import csv
 
 from utils import SpecialTokens
 
+from abc import ABC
+
 logger = logging.getLogger(__name__)
 
 
-class BandGenerator:
-    def __init__(self, model, tokenizer=None, blacklist_path=None, industries_path=None, device=None):
+class Generator(ABC):
+    def __init__(self, model, tokenizer=None, device=None):
         assert tokenizer or isinstance(model, str), "if model is not a model path, tokenizer should be provided"
+        self.forward_model, self.tokenizer = self.load_model(model, tokenizer, device)
 
+    @staticmethod
+    def load_model(forward_model, tokenizer, device):
         if not device:
-            self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+            device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
         else:
-            self.device = torch.device(device)
+            device = torch.device(device)
 
-        logger.info(f"Using device {self.device}")
+        logger.info(f"Using device {device}")
+
+        if isinstance(forward_model, str):
+            # LOAD TOKENIZER
+            logger.info("Loading tokenizer...")
+            tokenizer = AutoTokenizer.from_pretrained(forward_model)
+            tokenizer.add_special_tokens(SpecialTokens.special_tokens_dict())
+            logger.info("Loaded tokenizer")
+
+            # LOAD FORWARD MODEL
+            logger.info(f"Loading forward model from {forward_model}")
+            forward_model = AutoModelWithLMHead.from_pretrained(forward_model).to(device)
+            logger.info("Loaded forward model")
+
+        return forward_model, tokenizer
+
+    def generate(
+            self,
+            prefix=SpecialTokens.BOS_TOKEN,
+            generation_args: dict = {}
+    ):
+        # ENCODE PREFIX
+
+        if isinstance(prefix, str):
+            input_ids = self.tokenizer.encode(prefix, return_tensors="pt").long().to(self.forward_model.device)
+        else:
+            input_ids = torch.tensor([prefix], dtype=torch.long).to(self.forward_model.device)
+
+        return self.forward_model.generate(input_ids,
+                                           pad_token_id=self.tokenizer.pad_token_id,
+                                           bos_token_id=self.tokenizer.bos_token_id,
+                                           eos_token_id=self.tokenizer.eos_token_id,
+                                           **generation_args)
+
+
+class BandGenerator(Generator):
+    def __init__(self, model, tokenizer=None, blacklist_path=None, genres_path=None, device=None):
+        super().__init__(model, tokenizer, device)
 
         # LOAD BLACKLIST
         if blacklist_path and os.path.isfile(blacklist_path):
             logger.info(f"Loading blacklist from {blacklist_path}...")
-            self.blacklist = Blacklist.load(blacklist_path)
-            logger.info(f"Loaded {len(self.blacklist)} band names to blacklist")
+            self.existing_bands = Blacklist.load(blacklist_path)
+            logger.info(f"Loaded {len(self.existing_bands)} band names to blacklist")
         else:
-            self.blacklist = None
+            self.existing_bands = None
 
-        if industries_path and os.path.isfile(industries_path):
-            logger.info(f"Loading industries from {industries_path}...")
-            with open(industries_path, 'rb') as f:
-                self.industries = pickle.load(f)
-            logger.info(f"Loaded {len(self.industries)} industries")
+        if genres_path and os.path.isfile(genres_path):
+            logger.info(f"Loading genres from {genres_path}...")
+            with open(genres_path, 'rb') as f:
+                self.genres = pickle.load(f)
+            logger.info(f"Loaded {len(self.genres)} genres")
         else:
-            self.industries = None
+            self.genres = None
 
-        if isinstance(model, str):
-            # LOAD TOKENIZER
-            logger.info("Loading tokenizer...")
-            self.tokenizer = AutoTokenizer.from_pretrained(model)
-            self.tokenizer.add_special_tokens(SpecialTokens.special_tokens_dict())
-            logger.info("Loaded tokenizer")
-
-            # LOAD FORWARD MODEL
-
-            logger.info(f"Loading forward model from {model}")
-            self.forward_model = AutoModelWithLMHead.from_pretrained(model).to(self.device)
-            logger.info("Loaded forward model")
-        else:
-            self.forward_model = model
-            self.tokenizer = tokenizer
+        self.seen_bands = set()
+        self.stats = GenerationStats()
 
     @staticmethod
     def _split_re():
@@ -76,32 +106,35 @@ class BandGenerator:
 
     # TODO add "generation args" and pass with **
     def evaluate_creativity(self, num_to_generate, max_iteration, max_length=1024):
-        gen, stats = self.generate_bands(num=num_to_generate,
-                                         max_iterations=max_iteration,
-                                         generation_args=dict(top_k=300,
+        gen = self.generate_by_input(num=num_to_generate,
+                                     max_iterations=max_iteration,
+                                     generation_args=dict(top_k=300,
                                                               num_return_sequences=12,
                                                               max_length=min(max_length, self.tokenizer.model_max_length),
                                                               do_sample=True)
-                                         )
+                                     )
 
         # calculate weighted average from generation stats
-        score = (stats.num_returned + sum([cand.score for cand in stats.viable_candidates])) / stats.num_items_considered
+        score = (self.stats.num_returned + sum([cand.score for cand in self.stats.viable_candidates])) \
+                / self.stats.num_items_considered
 
         return {
             "generation_score": score,
-            "success_rate": stats.num_returned / stats.num_items_considered,
+            "success_rate": self.stats.num_returned / self.stats.num_items_considered,
         }
 
-    def generate_bands(
+    def generate_by_input(
             self,
             prefix=SpecialTokens.BOS_TOKEN,
             num=100,
             max_iterations=10,
             generation_args: dict = {},
             filter_generated=True,
+            existing_bands=True,
             dedupe_titles=True,
+            genres=True,
             user_filter=None,
-            min_text_words=3,
+            min_lyrics_words=50,
             save_path=None
     ):
 
@@ -111,41 +144,29 @@ class BandGenerator:
         ret = []
         num_iteration = 0
 
-        # ENCODE PREFIX
-
-        if isinstance(prefix, str):
-            input_ids = self.tokenizer.encode(prefix, return_tensors="pt").long().to(self.forward_model.device)
-        else:
-            input_ids = torch.tensor([prefix], dtype=torch.long).to(self.forward_model.device)
-
         split_re = self._split_re()
-        seen_companies = set()
-        stats = GenerationStats()
         t = tqdm(total=num)
 
         while len(ret) < num and num_iteration < max_iterations:
             current_ret = []
             num_iteration += 1
-            stats.num_iterations += 1
+            self.stats.num_iterations += 1
 
             # GENERATION
-            generated = self.forward_model.generate(input_ids,
-                                                    pad_token_id=self.tokenizer.pad_token_id,
-                                                    bos_token_id=self.tokenizer.bos_token_id,
-                                                    eos_token_id=self.tokenizer.eos_token_id,
-                                                    **generation_args)
+            generated = self.generate(prefix, generation_args)
+
             for i in range(generated.size()[0]):
                 if (len(ret) + len(current_ret)) >= num:
                     break
-                stats.viable_candidates = stats.viable_candidates[:1000]
+                self.stats.viable_candidates = self.stats.viable_candidates[:1000]
 
-                stats.num_items_considered += 1
+                self.stats.num_items_considered += 1
                 sentence_tokens = generated[i, :].tolist()
                 decoded = self.tokenizer.decode(sentence_tokens)
 
                 m = split_re.match(decoded)
                 if not m:
-                    stats.num_failed_match += 1
+                    self.stats.num_failed_match += 1
                     continue
 
                 band = m.group("band")  # band name
@@ -156,41 +177,20 @@ class BandGenerator:
                 generated_band = GeneratedBand(
                     band=band and band.strip(),
                     genre=genre and genre.strip(),
+                    song=song and song,
                     lyrics=lyrics and lyrics
                 )
 
                 if filter_generated:
 
-                    if self.blacklist and self.blacklist.contains(band):
-                        stats.num_blacklist_filtered += 1
-                        continue
-
-                    if dedupe_titles and band.strip().lower() in seen_companies:
-                        stats.num_seen_filtered += 1
-                        continue
-
-                    if len(lyrics.split()) < min_text_words:
-                        stats.num_short_texts += 1
-                        stats.viable_candidates.append(GeneratedBandCandidate(0.2, generated_band))
-                        continue
-
-                    if self.industries and genre not in self.industries:
-                        stats.num_genre_filter += 1
-                        stats.viable_candidates.append(GeneratedBandCandidate(0.5, generated_band))
-                        continue
-
-                    # if band.lower() not in lyrics.lower():
-                    #     stats.num_text_missing_company += 1
-                    #     stats.viable_candidates.append(GeneratedCompanyCandidate(0.8, generated_band))
-                    #     continue
-
-                    if user_filter and not user_filter(generated_band):
-                        stats.num_user_filtered += 1
+                    tests_succeed = self.pipeline_generated_tests(band, genre, lyrics, generated_band,
+                                                                  existing_bands, dedupe_titles, genres, user_filter)
+                    if not tests_succeed:
                         continue
 
                     t.update()
                     current_ret.append(generated_band)
-                    seen_companies.add(band.strip().lower())
+                    self.seen_bands.add(band.strip().lower())
                 else:
                     t.update()
                     current_ret.append(generated_band)
@@ -210,16 +210,61 @@ class BandGenerator:
 
             ret += current_ret
 
-        stats.num_returned = len(ret)
-        stats.wall_time = time.time() - start
+        self.stats.num_returned = len(ret)
+        self.stats.wall_time = time.time() - start
 
-        return ret[:num], stats
+        return ret[:num]
+
+    def pipeline_generated_tests(self, band, genre, lyrics, generated_band,
+                                 existing_bands, dedupe_titles, genres, user_filter):
+
+        if existing_bands and self.band_already_exists(band):
+            self.stats.num_blacklist_filtered += 1
+            return False
+
+        if dedupe_titles and self.seen_band(band):
+            self.stats.num_seen_filtered += 1
+            return False
+
+        if self.song_is_short(lyrics):
+            self.stats.num_short_texts += 1
+            self.stats.viable_candidates.append(GeneratedBandCandidate(0.2, generated_band))
+            return False
+
+        if genres and self.genre_not_exist(genre):
+            self.stats.num_genre_filter += 1
+            self.stats.viable_candidates.append(GeneratedBandCandidate(0.5, generated_band))
+            return False
+
+        if user_filter and not user_filter(generated_band):
+            self.stats.num_user_filtered += 1
+            return False
+
+        return True
+
+    def band_already_exists(self, band):
+        if not self.existing_bands:
+            raise RuntimeError("existing_bands variable doesn't exist")
+        return self.existing_bands.contains(band)
+
+    def seen_band(self, band):
+        return band.strip().lower() in self.seen_bands
+
+    @staticmethod
+    def song_is_short(lyrics, min_lyrics_words=30):
+        return len(lyrics.split()) < min_lyrics_words
+
+    def genre_not_exist(self, genre):
+        if not self.genres:
+            raise RuntimeError("genres variable doesn't exist")
+        return genre not in self.genres
 
 
 @dataclass
 class GeneratedBand:
     band: str
     genre: str
+    song: str
     lyrics: str
 
     @classmethod
@@ -227,6 +272,7 @@ class GeneratedBand:
         for band in bands:
             band_str = [band.band, f"/{band.genre}/"]
             print(" ".join(band_str), file=f)
+            print(f"\t{band.song}", file=f)
             print(f"\t{band.lyrics}", file=f)
             print("----------------", file=f)
 
@@ -248,7 +294,7 @@ class GenerationStats:
     num_genre_filter: int = 0
 
     num_short_texts: int = 0
-    num_text_missing_band: int = 0
+    # num_text_missing_band: int = 0
 
     num_user_filtered: int = 0
     num_returned: int = 0
@@ -267,7 +313,7 @@ class GenerationStats:
                     ("blacklist_filtered", self.num_blacklist_filtered),
                     ("seen_filtered", self.num_seen_filtered),
                     ("short_definitions", self.num_short_texts),
-                    ("text_missing_company", self.num_text_missing_band),
+                    # ("text_missing_company", self.num_text_missing_band),
                     ("user_filtered", self.num_user_filtered),
                     ("returned", self.num_returned),
                 )
