@@ -79,17 +79,11 @@ class BandGenerator:
         gen, stats = self.generate_bands(num=num_to_generate,
                                          max_iterations=max_iteration,
                                          generation_args=dict(top_k=300,
-                                                                  num_return_sequences=12,
-                                                                  max_length=min(max_length, self.tokenizer.model_max_length),
-                                                                  do_sample=True)
+                                                              num_return_sequences=12,
+                                                              max_length=min(max_length, self.tokenizer.model_max_length),
+                                                              do_sample=True)
                                          )
-        try:
-            logger.info(f"Example 1: {gen[0]}")
-            logger.info(f"Example 2: {gen[1]}")
-            logger.info(f"Example 3: {gen[2]}")
-            logger.info(f"Example 4: {gen[3]}")
-        except:
-            pass
+
         # calculate weighted average from generation stats
         score = (stats.num_returned + sum([cand.score for cand in stats.viable_candidates])) / stats.num_items_considered
 
@@ -104,7 +98,7 @@ class BandGenerator:
             num=100,
             max_iterations=10,
             generation_args: dict = {},
-            filter_generated=False,
+            filter_generated=True,
             dedupe_titles=True,
             user_filter=None,
             min_text_words=3,
@@ -156,7 +150,7 @@ class BandGenerator:
 
                 band = m.group("band")  # band name
                 genre = m.group("genre")  # genre
-                song = m.group("song")  # genre
+                song = m.group("song")  # song name
                 lyrics = m.group("lyrics")  # lyrics
 
                 generated_band = GeneratedBand(
