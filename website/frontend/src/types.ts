@@ -1,14 +1,14 @@
 
 
 export interface GenerationInput{
-    bandName?: string,
+    band_name?: string,
     genre?: string,
-    songName?: string
+    song_name?: string
 }
 
 export interface GeneratedBand{
-    bandName: string,
+    band_name: string,
     genre: string,
-    songName: string,
+    song_name: string,
     lyrics: string
 }

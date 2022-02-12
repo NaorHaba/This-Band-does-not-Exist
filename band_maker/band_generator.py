@@ -24,12 +24,9 @@ logger = logging.getLogger(__name__)
 
 
 class Generator(ABC):
-    def __init__(self, model, backward_model, tokenizer=None, backward_tokenizer=None, device=None):
+    def __init__(self, model, tokenizer=None, device=None):
         assert tokenizer or isinstance(model, str), "if model is not a model path, tokenizer should be provided"
         self.forward_model, self.tokenizer = self.load_model(model, tokenizer, device)
-        # assert backward_tokenizer or isinstance(backward_model,
-        #                                         str), "if model is not a model path, tokenizer should be provided"
-        self.backward_model, self.backward_tokenizer = self.load_model(backward_model, backward_tokenizer, device)
 
     @staticmethod
     def load_model(forward_model, tokenizer, device):
@@ -56,14 +53,11 @@ class Generator(ABC):
 
     def generate(
             self,
-            input_ids=None,
+            input_ids,
             **generation_args
     ):
-        # ENCODE PREFIX
-        if input_ids is None:
-            input_ids = torch.tensor([SpecialTokens.BOS_TOKEN], dtype=torch.long).to(self.forward_model.device)
+        assert input_ids, f"Input ids is mandatory, received {input_ids}"
 
-        # if not inverse_mode:
         return custom_sample(self.forward_model, input_ids,
                              pad_token_id=self.tokenizer.pad_token_id,
                              bos_token_id=self.tokenizer.bos_token_id,
@@ -71,17 +65,9 @@ class Generator(ABC):
                              **generation_args)
 
 
-@dataclass
-class GenerationInput:
-    band_name: str
-    genre: str
-    song_name: str
-
-
 class BandGenerator(Generator):
-    def __init__(self, model, backward_model, tokenizer=None, backward_tokenizer=None,
-                 blacklist_path=None, genres_path=None, device=None):
-        super().__init__(model, backward_model, tokenizer, backward_tokenizer, device)
+    def __init__(self, model, tokenizer=None, blacklist_path=None, genres_path=None, device=None):
+        super().__init__(model, tokenizer, device)
 
         # LOAD BLACKLIST
         if blacklist_path and os.path.isfile(blacklist_path):
@@ -114,65 +100,31 @@ class BandGenerator(Generator):
 
     # TODO add "generation args" and pass with **
     def evaluate_creativity(self, num_to_generate, max_iteration, max_length=1024):
-        gen = self.generate_by_input(num=num_to_generate,
-                                     max_iterations=max_iteration,
-                                     generation_args=dict(top_k=300,
-                                                          num_return_sequences=12,
-                                                          max_length=min(max_length, self.tokenizer.model_max_length),
-                                                          do_sample=True)
-                                     )
+        _, stats = self.generate_batch(batch_size=num_to_generate,
+                                       max_iterations=max_iteration,
+                                       generation_args=dict(top_k=300,
+                                                            num_return_sequences=12,
+                                                            max_length=min(max_length, self.tokenizer.model_max_length),
+                                                            temperature=2,
+                                                            transform_logits_warper=
+                                                            partial(decrease_temperature_gradually, decrease_factor=0.8)
+                                                            )
+                                       )
 
         # calculate weighted average from generation stats
-        score = (self.stats.num_returned + sum([cand.score for cand in self.stats.viable_candidates])) \
-                / self.stats.num_items_considered
+        score = (stats.num_returned + sum([cand.score for cand in stats.viable_candidates])) / stats.num_items_considered
 
         return {
             "generation_score": score,
-            "success_rate": self.stats.num_returned / self.stats.num_items_considered,
+            "success_rate": stats.num_returned / stats.num_items_considered,
         }
-
-    def generate_band(
-            self,
-            generation_input=None,
-            num=100,
-            max_iterations=10,
-            filter_generated=True,
-            existing_bands=True,
-            dedupe_titles=True,
-            genres=True,
-            user_filter=None,
-            save_path=None,
-            **generation_args
-    ):
-
-        inverse_mode = generation_input and generation_input.song_name and not generation_input.band_name
-        if inverse_mode:
-            generation_input = self.generate_by_input(generation_input, 1, max_iterations,
-                                                      filter_generated, existing_bands, dedupe_titles, genres,
-                                                      user_filter, **generation_args)
-        return self.generate_by_input(generation_input, num, max_iterations,
-                                      filter_generated, existing_bands, dedupe_titles, genres, user_filter,
-                                      save_path, **generation_args)
-
-    def prepare_prefix(self, generation_input: GenerationInput):
-        # song name - inverse model
-        self.prefix += generation_input.band_name
-        if generation_input.genre:
-            if generation_input.band_name == '':
-                raise RuntimeError("Can't generate genre without a band-name.")
-            self.prefix += SpecialTokens.GNR_SEP
-            self.prefix += generation_input.genre
-        if generation_input.song_name != '':
-            self.prefix += SpecialTokens.SNG_SEP
-            self.prefix += generation_input.song_name
 
     def generate_batch(
             self,
             batch_size=100,
             max_iterations=10,
-            filter_generated=True,
             existing_bands=True,
-            dedupe_titles=True,
+            seen_bands=True,
             genres=True,
             save_path=None,
             **generation_args
@@ -180,7 +132,10 @@ class BandGenerator(Generator):
 
         # GENERATE BANDS:
 
-        seen_bands = set()
+        if seen_bands:
+            seen_bands = set()
+        else:
+            seen_bands = None
         stats = GenerationStats()
 
         start = time.time()
@@ -190,7 +145,7 @@ class BandGenerator(Generator):
         split_re = self._split_re()
         t = tqdm(total=batch_size)
         device = self.forward_model.device
-        input_ids = self.tokenizer.encode([SpecialTokens.BOS_TOKEN], return_tensors="pt").long().to(device)
+        input_ids = self.tokenizer.encode(SpecialTokens.BOS_TOKEN, return_tensors="pt").long().to(device)
 
         while len(ret) < batch_size and num_iteration < max_iterations:
             current_ret = []
@@ -224,7 +179,7 @@ class BandGenerator(Generator):
                 )
 
                 tests_succeed = self.pipeline_generated_tests(generated_band, stats, existing_bands,
-                                                              dedupe_titles, genres)
+                                                              seen_bands, genres)
                 if not tests_succeed:
                     continue
 
@@ -257,7 +212,7 @@ class BandGenerator(Generator):
 
     def generate_by_input(
             self,
-            generation_input: GenerationInput = GenerationInput('', '', ''),
+            generation_input: GenerationInput,
             max_iterations=10,
             filter_existing_bands=True,
             filter_genres=True,
@@ -270,7 +225,7 @@ class BandGenerator(Generator):
 
         split_re = self._split_re()
 
-        prefix = self.prepare_prefix(generation_input)
+        prefix = generation_input.prepare_input()
         device = self.forward_model.device
         input_ids = self.tokenizer.encode(prefix, return_tensors="pt").long().to(device)
 
@@ -305,84 +260,12 @@ class BandGenerator(Generator):
 
         raise CantCreateBandError
 
-    # def generate_inverse(
-    #         self,
-    #         generation_input=None,
-    #         num=1,
-    #         max_iterations=10,
-    #         filter_generated=True,
-    #         existing_bands=True,
-    #         dedupe_titles=True,
-    #         genres=True,
-    #         user_filter=None,
-    #         **generation_args
-    # ):
-    #
-    #     # GENERATE BANDS:
-    #
-    #     num_iteration = 0
-    #
-    #     split_re = self._split_re(model='inverse')
-    #     t = tqdm(total=num)
-    #     if not generation_input:
-    #         generation_input = GenerationInput('', '', '')
-    #     self.prepare_prefix(generation_input)
-    #     input_ids = self.tokenizer.encode(self.prefix, return_tensors="pt").long().to(self.forward_model.device)
-    #
-    #     while num_iteration < max_iterations:
-    #         current_ret = []
-    #         num_iteration += 1
-    #
-    #         # GENERATION
-    #         generated = self.generate('inverse', input_ids, **generation_args)
-    #
-    #         for i in range(generated.size()[0]):
-    #             if len(current_ret) >= num:
-    #                 break
-    #
-    #             sentence_tokens = generated[i, :].tolist()
-    #             decoded = self.tokenizer.decode(sentence_tokens)
-    #
-    #             m = split_re.match(decoded)
-    #             if not m:
-    #                 self.stats.num_failed_match += 1
-    #                 continue
-    #
-    #             band = m.group("band")  # band name
-    #             genre = m.group("genre")  # genre
-    #             song = m.group("song")  # song name
-    #
-    #             generation_input = GenerationInput(band, genre, song)
-    #
-    #             generated_band = GeneratedBand(
-    #                 band=band and band.strip(),
-    #                 genre=genre and genre.strip(),
-    #                 song=song and song,
-    #                 lyrics=''
-    #             )
-    #
-    #             if filter_generated:
-    #                 tests_succeed = self.pipeline_generated_tests(
-    #                     generated_band, existing_bands, dedupe_titles, genres, user_filter, generation_input,
-    #                     model='inverse')
-    #                 if not tests_succeed:
-    #                     continue
-    #
-    #                 t.update()
-    #                 current_ret.append(generated_band)
-    #                 self.seen_bands.add(band.strip().lower())
-    #             else:
-    #                 t.update()
-    #                 current_ret.append(generated_band)
-    #
-    #     return generation_input
-
     def pipeline_generated_tests(
             self,
             generated_band,
             stats=GenerationStats(),
             existing_bands=False,
-            dedupe_titles=False,
+            seen_bands=None,
             genres=False
     ):
         band, genre, lyrics = generated_band.band, generated_band.genre, generated_band.lyrics
@@ -391,7 +274,7 @@ class BandGenerator(Generator):
             stats.num_blacklist_filtered += 1
             return False
 
-        if dedupe_titles and self.seen_band(band):
+        if seen_bands and self.seen_band(band, seen_bands):
             stats.num_seen_filtered += 1
             return False
 
@@ -412,8 +295,8 @@ class BandGenerator(Generator):
             raise RuntimeError("existing_bands variable doesn't exist")
         return self.existing_bands.contains(band)
 
-    def seen_band(self, band):
-        return band.strip().lower() in self.seen_bands
+    def seen_band(self, band, seen_bands):
+        return band.strip().lower() in seen_bands
 
     @staticmethod
     def song_is_short(lyrics, min_lyrics_words=30):
@@ -446,6 +329,35 @@ class GeneratedBand:
 class GeneratedBandCandidate:
     score: float
     candidate: GeneratedBand
+
+
+@dataclass
+class GenerationInput:
+    band_name: str
+    genre: str
+    song_name: str
+
+    def prepare_input(self):
+        prefix = SpecialTokens.BOS_TOKEN
+        if self.band_name:
+            prefix += self.band_name
+            prefix += SpecialTokens.GNR_SEP
+            if self.genre:
+                prefix += self.genre
+                prefix += SpecialTokens.SNG_SEP
+                if self.song_name:
+                    prefix += self.song_name
+                    prefix += SpecialTokens.LRC_SEP
+        elif self.song_name:
+            prefix += self.song_name
+            prefix += SpecialTokens.GNR_SEP
+            if self.genre:
+                prefix += self.genre
+                prefix += SpecialTokens.SNG_SEP
+        elif self.genre:
+            raise RuntimeError  # todo better error
+
+        return prefix
 
 
 @dataclass
