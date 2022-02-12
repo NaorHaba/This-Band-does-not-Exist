@@ -1,5 +1,5 @@
 import { LoadingButton } from "@mui/lab";
-import { TextField } from "@mui/material";
+import { MenuItem, TextField } from "@mui/material";
 import { Box } from "@mui/system";
 import React from "react";
 import { useQuery } from "react-query";
@@ -18,7 +18,7 @@ function App() {
     GeneratedBand | string
   >("");
 
-  const { status, data, error, isError } = useQuery(
+  const { status, data, error, isError, remove } = useQuery(
     "submitBandForm",
     () =>
       submitForm({
@@ -26,14 +26,22 @@ function App() {
         genre,
         songName,
       } as GenerationInput),
-    { enabled: triggerQuery }
+    {
+      enabled: triggerQuery,
+      onSettled: () => {
+        setTriggerQuery(false);
+      },
+    }
   );
 
   React.useEffect(() => {
     if (isError) {
-      console.log(error + "moshe"); // TODO
+      console.log(error); // TODO
     }
-    if (status === "success" && data) setGeneratedBand(data);
+    if (status === "success" && data) {
+      setGeneratedBand(data);
+      remove();
+    }
   }, [status, data]);
 
   return (
@@ -69,9 +77,17 @@ function App() {
             label="Genre"
             variant="outlined"
             value={genre}
+            select
             onChange={(e) => setGenre(e.target.value)}
             helperText={genre === "naor" ? "Text field can't be naor" : null}
-          />
+          >
+            <MenuItem key={"Rock"} value={"Rock"}>
+              Rock
+            </MenuItem>
+            <MenuItem key={"Pop"} value={"Pop"}>
+              Pop
+            </MenuItem>
+          </TextField>
           <TextField
             error={genre === "naor"}
             label="Song Name"
@@ -89,7 +105,7 @@ function App() {
             Submit
           </LoadingButton>
         </Box>
-        {generatedBand && <Box>moshe</Box>}
+        {generatedBand && <Box>{generatedBand}</Box>}
         <a
           className="App-link"
           href="https://reactjs.org"
