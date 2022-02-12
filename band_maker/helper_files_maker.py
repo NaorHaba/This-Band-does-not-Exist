@@ -11,8 +11,8 @@ args = parser.parse_args()
 
 # read and concatenate train and test data files
 if args.task == 'concatenate_data':
-    train = pd.read_csv('data/train.csv', usecols=['Artist', 'Song', 'Genre', 'Language', 'Lyrics'])
-    test = pd.read_csv('data/test.csv', usecols=['Artist', 'Song', 'Genre', 'Lyrics'])
+    train = pd.read_csv('../data/train.csv', usecols=['Artist', 'Song', 'Genre', 'Language', 'Lyrics'])
+    test = pd.read_csv('../data/test.csv', usecols=['Artist', 'Song', 'Genre', 'Lyrics'])
     train = train[train.Language == 'en'].drop(columns=['Language'])
     data = pd.concat([train, test])
     # drop nan (and shuffle):
