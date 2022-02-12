@@ -3,6 +3,7 @@ import pickle
 import re
 import sys
 import time
+from functools import partial
 
 from dataclasses import dataclass
 
@@ -16,6 +17,7 @@ from transformers import AutoModelWithLMHead, AutoTokenizer
 import os
 import csv
 
+from custom_generate import decrease_temperature_gradually, custom_sample
 from utils import SpecialTokens
 
 logger = logging.getLogger(__name__)
@@ -59,22 +61,16 @@ class Generator(ABC):
             **generation_args
     ):
         # ENCODE PREFIX
-        # TODO: maybe in backward model this 'if' should be different
+        device = self.forward_model.device if not inverse_mode else self.backward_model.device
         if input_ids is None:
-            input_ids = torch.tensor([SpecialTokens.BOS_TOKEN], dtype=torch.long).to(self.forward_model.device)
+            input_ids = torch.tensor([SpecialTokens.BOS_TOKEN], dtype=torch.long).to(device)
 
-        if not inverse_mode:
-            return self.forward_model.generate(input_ids,
-                                               pad_token_id=self.tokenizer.pad_token_id,
-                                               bos_token_id=self.tokenizer.bos_token_id,
-                                               eos_token_id=self.tokenizer.eos_token_id,
-                                               **generation_args)
-        else:
-            return self.backward_model.generate(input_ids,
-                                                pad_token_id=self.backward_tokenizer.pad_token_id,
-                                                bos_token_id=self.backward_tokenizer.bos_token_id,
-                                                eos_token_id=self.backward_tokenizer.eos_token_id,
-                                                **generation_args)
+        # if not inverse_mode:
+        return custom_sample(self.forward_model, input_ids,
+                             pad_token_id=self.tokenizer.pad_token_id,
+                             bos_token_id=self.tokenizer.bos_token_id,
+                             eos_token_id=self.tokenizer.eos_token_id,
+                             **generation_args)
 
 
 @dataclass
@@ -208,6 +204,9 @@ class BandGenerator(Generator):
         t = tqdm(total=num)
         if not generation_input:
             generation_input = GenerationInput('', '', '')
+        # gen_bands_mode = not generation_input.band_name and not generation_input.song_name
+        # if gen_bands_mode:
+        #     generation_input.band_name = self.backward_model()
         self.prepare_prefix(generation_input)
         device = self.backward_model.device if inverse_mode else self.forward_model.device
         input_ids = self.tokenizer.encode(self.prefix, return_tensors="pt").long().to(device)
@@ -219,16 +218,16 @@ class BandGenerator(Generator):
 
             # GENERATION
             generated = self.generate(inverse_mode, input_ids, **generation_args)
-
-            for i in range(generated.size()[0]):
+            decoded_batch = self.tokenizer.batch_decode(generated)
+            for i, decoded in enumerate(decoded_batch):
                 if (len(ret) + len(current_ret)) >= num:
                     break
                 if not inverse_mode:
                     self.stats.viable_candidates = self.stats.viable_candidates[:1000]
+                    self.stats.num_items_considered += 1
 
-                self.stats.num_items_considered += 1 if not inverse_mode else 0
-                sentence_tokens = generated[i, :].tolist()
-                decoded = self.tokenizer.decode(sentence_tokens)
+                # sentence_tokens = generated[i, :].tolist()
+                # decoded = self.tokenizer.decode(sentence_tokens)
 
                 m = split_re.match(decoded)
                 if not m:
@@ -262,9 +261,6 @@ class BandGenerator(Generator):
                     t.update()
                     current_ret.append(generated_band)
 
-            if inverse_mode:
-                return generation_input
-
             if save_path:
                 if not os.path.isfile(save_path):
                     f = open(save_path, 'a')
@@ -274,11 +270,14 @@ class BandGenerator(Generator):
                     if os.stat(save_path).st_size == 0:
                         columns = ['band_name', 'genre', 'lyrics']
                         writer.writerow(columns)
-                    generated_companies = current_ret
-                    rows = [[c.band, c.genre, c.lyrics] for c in generated_companies]
+                    generated_bands = current_ret
+                    rows = [[b.band, b.genre, b.lyrics] for b in generated_bands]
                     writer.writerows(rows)
 
             ret += current_ret
+
+        if inverse_mode:
+            return generation_input
 
         self.stats.num_returned = len(ret)
         self.stats.wall_time = time.time() - start
@@ -395,7 +394,7 @@ class BandGenerator(Generator):
 
     @staticmethod
     def song_is_short(lyrics, min_lyrics_words=30):
-        return len(lyrics.split()) < min_lyrics_words
+        return len(lyrics.replace('\n', ' ').split()) < min_lyrics_words
 
     def genre_not_exist(self, genre):
         if not self.genres:
