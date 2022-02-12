@@ -1,9 +1,8 @@
-import abc
+from abc import ABC
 import pickle
 import re
 import sys
 import time
-from typing import Optional, List
 
 from dataclasses import dataclass
 
@@ -19,8 +18,6 @@ import csv
 
 from utils import SpecialTokens
 
-from abc import ABC
-
 logger = logging.getLogger(__name__)
 
 
@@ -30,8 +27,7 @@ class Generator(ABC):
         self.forward_model, self.tokenizer = self.load_model(model, tokenizer, device)
         # assert backward_tokenizer or isinstance(backward_model,
         #                                         str), "if model is not a model path, tokenizer should be provided"
-        # #TODO: is this how we load this model too?
-        # self.backward_model, self.backward_tokenizer = self.load_model(backward_model, backward_tokenizer, device)
+        self.backward_model, self.backward_tokenizer = self.load_model(backward_model, backward_tokenizer, device)
 
     @staticmethod
     def load_model(forward_model, tokenizer, device):
@@ -58,7 +54,7 @@ class Generator(ABC):
 
     def generate(
             self,
-            direction='forward',
+            inverse_mode=False,
             input_ids=None,
             **generation_args
     ):
@@ -67,18 +63,18 @@ class Generator(ABC):
         if input_ids is None:
             input_ids = torch.tensor([SpecialTokens.BOS_TOKEN], dtype=torch.long).to(self.forward_model.device)
 
-        if direction == 'forward':
+        if not inverse_mode:
             return self.forward_model.generate(input_ids,
                                                pad_token_id=self.tokenizer.pad_token_id,
                                                bos_token_id=self.tokenizer.bos_token_id,
                                                eos_token_id=self.tokenizer.eos_token_id,
                                                **generation_args)
-        # else:
-        #     return self.backward_model.generate(input_ids,
-        #                                         pad_token_id=self.backward_tokenizer.pad_token_id,
-        #                                         bos_token_id=self.backward_tokenizer.bos_token_id,
-        #                                         eos_token_id=self.backward_tokenizer.eos_token_id,
-        #                                         **generation_args)
+        else:
+            return self.backward_model.generate(input_ids,
+                                                pad_token_id=self.backward_tokenizer.pad_token_id,
+                                                bos_token_id=self.backward_tokenizer.bos_token_id,
+                                                eos_token_id=self.backward_tokenizer.eos_token_id,
+                                                **generation_args)
 
 
 @dataclass
@@ -89,8 +85,13 @@ class GenerationInput:
 
 
 class BandGenerator(Generator):
-    def __init__(self, model, tokenizer=None, blacklist_path=None, genres_path=None, device=None):
-        super().__init__(model, tokenizer, device)
+    def __init__(self, model, backward_model, tokenizer=None, backward_tokenizer=None,
+                 blacklist_path=None, genres_path=None, device=None):
+        super().__init__(model, backward_model, tokenizer, backward_tokenizer, device)
+
+        self.seen_bands = set()
+        self.stats = GenerationStats()
+        self.prefix = SpecialTokens.BOS_TOKEN
 
         # LOAD BLACKLIST
         if blacklist_path and os.path.isfile(blacklist_path):
@@ -100,6 +101,7 @@ class BandGenerator(Generator):
         else:
             self.existing_bands = None
 
+        # LOAD GENRES
         if genres_path and os.path.isfile(genres_path):
             logger.info(f"Loading genres from {genres_path}...")
             with open(genres_path, 'rb') as f:
@@ -108,19 +110,23 @@ class BandGenerator(Generator):
         else:
             self.genres = None
 
-        self.seen_bands = set()
-        self.stats = GenerationStats()
-        self.prefix = SpecialTokens.BOS_TOKEN
-
     @staticmethod
-    def _split_re():
-        split_re_pat = (
-            f"^{re.escape(SpecialTokens.BOS_TOKEN)}(?P<band>.+?)"
-            f"(?:{re.escape(SpecialTokens.GNR_SEP)}(?P<genre>.+?))"
-            f"(?:{re.escape(SpecialTokens.SNG_SEP)}(?P<song>.+?))"
-            f"{re.escape(SpecialTokens.LRC_SEP)}(?P<lyrics>.+?)"
-            f"{re.escape(SpecialTokens.EOS_TOKEN)}*"
-        )
+    def _split_re(inverse_mode=False):
+        if not inverse_mode:
+            split_re_pat = (
+                f"^{re.escape(SpecialTokens.BOS_TOKEN)}(?P<band>.+?)"
+                f"(?:{re.escape(SpecialTokens.GNR_SEP)}(?P<genre>.+?))"
+                f"(?:{re.escape(SpecialTokens.SNG_SEP)}(?P<song>.+?))"
+                f"{re.escape(SpecialTokens.LRC_SEP)}(?P<lyrics>.+?)"
+                f"{re.escape(SpecialTokens.EOS_TOKEN)}*"
+            )
+        else:
+            split_re_pat = (
+                f"^{re.escape(SpecialTokens.BOS_TOKEN)}(?P<band>.+?)"
+                f"(?:{re.escape(SpecialTokens.GNR_SEP)}(?P<genre>.+?))"
+                f"(?:{re.escape(SpecialTokens.SNG_SEP)}(?P<song>.+?))"
+                f"{re.escape(SpecialTokens.EOS_TOKEN)}*"
+            )
         split_re = re.compile(split_re_pat, flags=re.MULTILINE | re.DOTALL)
         return split_re
 
@@ -145,36 +151,41 @@ class BandGenerator(Generator):
 
     def generate_band(
             self,
-            generation_input: GenerationInput,
+            generation_input=None,
             num=100,
             max_iterations=10,
-            generation_args: dict = {},
             filter_generated=True,
             existing_bands=True,
             dedupe_titles=True,
             genres=True,
             user_filter=None,
-            save_path=None
+            save_path=None,
+            **generation_args
     ):
-        prefix = SpecialTokens.BOS_TOKEN
-        return self.generate_by_input()
+        inverse_mode = generation_input and generation_input.song_name and not generation_input.band_name
+        if inverse_mode:
+            generation_input = self.generate_by_input(generation_input, 1, max_iterations,
+                                                      filter_generated, existing_bands, dedupe_titles, genres,
+                                                      user_filter, **generation_args)
+        return self.generate_by_input(generation_input, num, max_iterations,
+                                      filter_generated, existing_bands, dedupe_titles, genres, user_filter,
+                                      save_path, **generation_args)
 
-    def prepare_prefix(self, input: GenerationInput):
-        # TODO: How to add genre without band_name? - error
+    def prepare_prefix(self, generation_input: GenerationInput):
         # song name - inverse model
-        self.prefix += input.band_name
-        if input.genre != '':
-            if input.band_name == '':
+        self.prefix += generation_input.band_name
+        if generation_input.genre:
+            if generation_input.band_name == '':
                 raise RuntimeError("Can't generate genre without a band-name.")
             self.prefix += SpecialTokens.GNR_SEP
-            self.prefix += input.genre
-        if input.song_name != '':
+            self.prefix += generation_input.genre
+        if generation_input.song_name != '':
             self.prefix += SpecialTokens.SNG_SEP
-            self.prefix += input.song_name
+            self.prefix += generation_input.song_name
 
     def generate_by_input(
             self,
-            input=None,
+            generation_input=None,
             num=100,
             max_iterations=10,
             filter_generated=True,
@@ -188,43 +199,46 @@ class BandGenerator(Generator):
 
         # GENERATE BANDS:
 
+        inverse_mode = generation_input and generation_input.song_name and not generation_input.band_name
         start = time.time()
         ret = []
         num_iteration = 0
 
-        split_re = self._split_re()
+        split_re = self._split_re(inverse_mode=inverse_mode)
         t = tqdm(total=num)
-        if not input:
-            input = GenerationInput('', '', '')
-        self.prepare_prefix(input)
-        input_ids = self.tokenizer.encode(self.prefix, return_tensors="pt").long().to(self.forward_model.device)
+        if not generation_input:
+            generation_input = GenerationInput('', '', '')
+        self.prepare_prefix(generation_input)
+        device = self.backward_model.device if inverse_mode else self.forward_model.device
+        input_ids = self.tokenizer.encode(self.prefix, return_tensors="pt").long().to(device)
 
         while len(ret) < num and num_iteration < max_iterations:
             current_ret = []
             num_iteration += 1
-            self.stats.num_iterations += 1
+            self.stats.num_iterations += 1 if not inverse_mode else 0
 
             # GENERATION
-            generated = self.generate('forward', input_ids, **generation_args)
+            generated = self.generate(inverse_mode, input_ids, **generation_args)
 
             for i in range(generated.size()[0]):
                 if (len(ret) + len(current_ret)) >= num:
                     break
-                self.stats.viable_candidates = self.stats.viable_candidates[:1000]
+                if not inverse_mode:
+                    self.stats.viable_candidates = self.stats.viable_candidates[:1000]
 
-                self.stats.num_items_considered += 1
+                self.stats.num_items_considered += 1 if not inverse_mode else 0
                 sentence_tokens = generated[i, :].tolist()
                 decoded = self.tokenizer.decode(sentence_tokens)
 
                 m = split_re.match(decoded)
                 if not m:
-                    self.stats.num_failed_match += 1
+                    self.stats.num_failed_match += 1 if not inverse_mode else 0
                     continue
 
                 band = m.group("band")  # band name
                 genre = m.group("genre")  # genre
                 song = m.group("song")  # song name
-                lyrics = m.group("lyrics")  # lyrics
+                lyrics = m.group("lyrics") if not inverse_mode else False  # lyrics
 
                 generated_band = GeneratedBand(
                     band=band and band.strip(),
@@ -235,16 +249,21 @@ class BandGenerator(Generator):
 
                 if filter_generated:
                     tests_succeed = self.pipeline_generated_tests(
-                        generated_band, existing_bands, dedupe_titles, genres, user_filter, input)
+                        generated_band, existing_bands, dedupe_titles, genres, user_filter, generation_input,
+                        inverse_mode)
                     if not tests_succeed:
                         continue
 
                     t.update()
                     current_ret.append(generated_band)
-                    self.seen_bands.add(band.strip().lower())
+                    if not inverse_mode:
+                        self.seen_bands.add(band.strip().lower())
                 else:
                     t.update()
                     current_ret.append(generated_band)
+
+            if inverse_mode:
+                return generation_input
 
             if save_path:
                 if not os.path.isfile(save_path):
@@ -266,7 +285,80 @@ class BandGenerator(Generator):
 
         return ret[:num]
 
-    def pipeline_generated_tests(self, generated_band, existing_bands, dedupe_titles, genres, user_filter, input):
+    # def generate_inverse(
+    #         self,
+    #         generation_input=None,
+    #         num=1,
+    #         max_iterations=10,
+    #         filter_generated=True,
+    #         existing_bands=True,
+    #         dedupe_titles=True,
+    #         genres=True,
+    #         user_filter=None,
+    #         **generation_args
+    # ):
+    #
+    #     # GENERATE BANDS:
+    #
+    #     num_iteration = 0
+    #
+    #     split_re = self._split_re(model='inverse')
+    #     t = tqdm(total=num)
+    #     if not generation_input:
+    #         generation_input = GenerationInput('', '', '')
+    #     self.prepare_prefix(generation_input)
+    #     input_ids = self.tokenizer.encode(self.prefix, return_tensors="pt").long().to(self.forward_model.device)
+    #
+    #     while num_iteration < max_iterations:
+    #         current_ret = []
+    #         num_iteration += 1
+    #
+    #         # GENERATION
+    #         generated = self.generate('inverse', input_ids, **generation_args)
+    #
+    #         for i in range(generated.size()[0]):
+    #             if len(current_ret) >= num:
+    #                 break
+    #
+    #             sentence_tokens = generated[i, :].tolist()
+    #             decoded = self.tokenizer.decode(sentence_tokens)
+    #
+    #             m = split_re.match(decoded)
+    #             if not m:
+    #                 self.stats.num_failed_match += 1
+    #                 continue
+    #
+    #             band = m.group("band")  # band name
+    #             genre = m.group("genre")  # genre
+    #             song = m.group("song")  # song name
+    #
+    #             generation_input = GenerationInput(band, genre, song)
+    #
+    #             generated_band = GeneratedBand(
+    #                 band=band and band.strip(),
+    #                 genre=genre and genre.strip(),
+    #                 song=song and song,
+    #                 lyrics=''
+    #             )
+    #
+    #             if filter_generated:
+    #                 tests_succeed = self.pipeline_generated_tests(
+    #                     generated_band, existing_bands, dedupe_titles, genres, user_filter, generation_input,
+    #                     model='inverse')
+    #                 if not tests_succeed:
+    #                     continue
+    #
+    #                 t.update()
+    #                 current_ret.append(generated_band)
+    #                 self.seen_bands.add(band.strip().lower())
+    #             else:
+    #                 t.update()
+    #                 current_ret.append(generated_band)
+    #
+    #     return generation_input
+
+    def pipeline_generated_tests(self, generated_band, existing_bands, dedupe_titles, genres, user_filter, input,
+                                 inverse_mode=False):
         band, genre, lyrics = generated_band.band, generated_band.genre, generated_band.lyrics
 
         if existing_bands and self.band_already_exists(band) and input.band_name == '':
@@ -277,7 +369,7 @@ class BandGenerator(Generator):
             self.stats.num_seen_filtered += 1
             return False
 
-        if self.song_is_short(lyrics):
+        if not inverse_mode and self.song_is_short(lyrics):
             self.stats.num_short_texts += 1
             self.stats.viable_candidates.append(GeneratedBandCandidate(0.2, generated_band))
             return False
