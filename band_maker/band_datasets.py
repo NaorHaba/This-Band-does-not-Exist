@@ -153,7 +153,7 @@ class LineByLineTextDataset(Dataset):
 
 class CSVDataset(Dataset):
     def __init__(
-        self, tokenizer: PreTrainedTokenizer, args, file_path: str, splits=(1.0, ), split_idx=0
+        self, tokenizer: PreTrainedTokenizer, args, file_path: str, splits=(1.0, ), split_idx=0, reverse=False
     ):
         """Reads the data from a csv file using pandas module. requires csv ordered by index starting from 0"""
         self.block_size = args.block_size
@@ -169,6 +169,7 @@ class CSVDataset(Dataset):
             splits=splits,
             split_idx=split_idx,
             block_size=self.block_size,
+            reverse=reverse
         )
 
         if os.path.exists(cached_features_file) and not args.overwrite_cache:
@@ -198,7 +199,7 @@ class CSVDataset(Dataset):
                         assert (starting_index == 0), "csv file should start from index 0"
                     if _in_split_range(split_range, starting_index / total_rows):
                         reached_first = True
-                        self.examples.extend(self._make_examples(tokenizer, chunk))
+                        self.examples.extend(self._make_examples(tokenizer, chunk, reverse))
                     elif reached_first:
                         break
 
@@ -206,15 +207,23 @@ class CSVDataset(Dataset):
             with open(cached_features_file, "wb") as handle:
                 pickle.dump(self.examples, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
-    def _make_examples(self, tokenizer, data: pd.DataFrame):
+    def _make_examples(self, tokenizer, data: pd.DataFrame, reverse: bool):
 
         def encode_songs(row):
-
-            return ''.join([SpecialTokens.BOS_TOKEN, row['Artist'].strip(),
-                            SpecialTokens.GNR_SEP, row['Genre'].strip(),
-                            SpecialTokens.SNG_SEP, row['Song'].strip(),
-                            SpecialTokens.LRC_SEP, row['Lyrics'].strip(),
-                            SpecialTokens.EOS_TOKEN])
+            if reverse:
+                return ''.join([
+                    SpecialTokens.BOS_TOKEN, row['Song'].strip(),
+                    SpecialTokens.GNR_SEP, row['Genre'].strip(),
+                    SpecialTokens.ART_SEP, row['Artist'].strip(),
+                    SpecialTokens.LRC_SEP, row['Lyrics'].strip(),
+                    SpecialTokens.EOS_TOKEN])
+            else:
+                return ''.join([
+                    SpecialTokens.BOS_TOKEN, row['Artist'].strip(),
+                    SpecialTokens.GNR_SEP, row['Genre'].strip(),
+                    SpecialTokens.SNG_SEP, row['Song'].strip(),
+                    SpecialTokens.LRC_SEP, row['Lyrics'].strip(),
+                    SpecialTokens.EOS_TOKEN])
 
         text_batch = data.apply(encode_songs, axis=1).tolist()
         return tokenizer(text_batch, add_special_tokens=True, max_length=self.block_size, truncation=True)["input_ids"]
@@ -232,7 +241,7 @@ def load_and_cache_examples(args, tokenizer, evaluate=False):
     if args.line_by_line:
         return LineByLineTextDataset(tokenizer, args, file_path=file_path, block_size=args.block_size)
     elif args.csv:
-        return CSVDataset(tokenizer, args, file_path=file_path, splits=args.splits,
+        return CSVDataset(tokenizer, args, file_path=file_path, splits=args.splits, reverse=args.reverse_dataset,
                           split_idx=int(args.eval_split_idx if evaluate else args.train_split_idx))
     else:
         raise NotImplementedError("Current implemented Dataset is only LineByLineTextDataset and CSV")

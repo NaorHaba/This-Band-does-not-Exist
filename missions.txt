@@ -1,0 +1,27 @@
+Finish code
+	- handle # TODO, # FIXME, irrelevant notes
+	- document
+	- README
+
+Finish website
+	- finish decorating
+	- add "rate us"
+	- add credits and git link
+	- prepare sample of examples
+		- add logic to sample and sample by genre
+	- add restrictions to input fields
+	- add instructions
+	
+Reverse model
+	train
+	- deploy to website
+	- check generation results on website
+	
+Evaluation
+	- weak fake?
+	- rate us?
+	- evaluate creativity
+	
+Report
+	- ;dfg;lewnrtejkghp
+	- sokjrgeprkt

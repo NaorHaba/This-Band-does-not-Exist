@@ -24,6 +24,7 @@ class SpecialTokens:
     EOS_TOKEN = "<|eog|>"
     PAD = "<|pad|>"
 
+    ART_SEP = "<|art|>"  # artist (relevant only for reverse)
     GNR_SEP = "<|gnr|>"  # genre
     SNG_SEP = "<|sng|>"  # song name
     LRC_SEP = "<|lrc|>"  # lyrics
@@ -34,7 +35,7 @@ class SpecialTokens:
             "bos_token": cls.BOS_TOKEN,
             "eos_token": cls.EOS_TOKEN,
             "pad_token": cls.PAD,
-            "additional_special_tokens": [cls.GNR_SEP, cls.SNG_SEP, cls.LRC_SEP],
+            "additional_special_tokens": [cls.ART_SEP, cls.GNR_SEP, cls.SNG_SEP, cls.LRC_SEP],
         }
 
 

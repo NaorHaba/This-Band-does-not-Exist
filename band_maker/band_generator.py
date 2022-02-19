@@ -53,6 +53,7 @@ class GenerationInput:
     song_name: str
 
     def prepare_input(self):
+        reverse = False
         prefix = SpecialTokens.BOS_TOKEN
         if self.band_name:
             prefix += self.band_name
@@ -64,15 +65,16 @@ class GenerationInput:
                     prefix += self.song_name
                     prefix += SpecialTokens.LRC_SEP
         elif self.song_name:
+            reverse = True
             prefix += self.song_name
             prefix += SpecialTokens.GNR_SEP
             if self.genre:
                 prefix += self.genre
-                prefix += SpecialTokens.SNG_SEP
+                prefix += SpecialTokens.ART_SEP
         elif self.genre:
             raise RuntimeError  # todo better error
 
-        return prefix
+        return prefix, reverse
 
 
 @dataclass
@@ -172,29 +174,32 @@ class BandGenerator(Generator):
             self.genres = None
 
     @staticmethod
-    def _split_re():
-        split_re_pat = (
-            f"^{re.escape(SpecialTokens.BOS_TOKEN)}(?P<band_name>.+?)"
-            f"(?:{re.escape(SpecialTokens.GNR_SEP)}(?P<genre>.+?))"
-            f"(?:{re.escape(SpecialTokens.SNG_SEP)}(?P<song_name>.+?))"
-            f"{re.escape(SpecialTokens.LRC_SEP)}(?P<lyrics>.+?)"
-            f"{re.escape(SpecialTokens.EOS_TOKEN)}*"
-        )
+    def _split_re(reverse=False):
+        if reverse:
+            split_re_pat = (
+                f"^{re.escape(SpecialTokens.BOS_TOKEN)}(?P<song_name>.+?)"
+                f"(?:{re.escape(SpecialTokens.GNR_SEP)}(?P<genre>.+?))"
+                f"(?:{re.escape(SpecialTokens.ART_SEP)}(?P<band_name>.+?))"
+                f"{re.escape(SpecialTokens.LRC_SEP)}(?P<lyrics>.+?)"
+                f"{re.escape(SpecialTokens.EOS_TOKEN)}*"
+            )
+        else:
+            split_re_pat = (
+                f"^{re.escape(SpecialTokens.BOS_TOKEN)}(?P<band_name>.+?)"
+                f"(?:{re.escape(SpecialTokens.GNR_SEP)}(?P<genre>.+?))"
+                f"(?:{re.escape(SpecialTokens.SNG_SEP)}(?P<song_name>.+?))"
+                f"{re.escape(SpecialTokens.LRC_SEP)}(?P<lyrics>.+?)"
+                f"{re.escape(SpecialTokens.EOS_TOKEN)}*"
+            )
         split_re = re.compile(split_re_pat, flags=re.MULTILINE | re.DOTALL)
         return split_re
 
     # TODO add "generation args" and pass with **
-    def evaluate_creativity(self, num_to_generate, max_iteration, max_length=1024):
+    def evaluate_creativity(self, num_to_generate, max_iteration, reverse=False, **generation_args):
         _, stats = self.generate_batch(batch_size=num_to_generate,
                                        max_iterations=max_iteration,
-                                       generation_args=dict(top_k=300,
-                                                            num_return_sequences=12,
-                                                            max_length=min(max_length, self.tokenizer.model_max_length),
-                                                            temperature=2,
-                                                            transform_logits_warper=
-                                                            partial(decrease_temperature_gradually, decrease_factor=0.8)
-                                                            )
-                                       )
+                                       reverse=reverse,
+                                       **generation_args)
 
         # calculate weighted average from generation stats
         score = (stats.num_returned + sum([cand.score for cand in stats.viable_candidates])) / stats.num_items_considered
@@ -212,6 +217,7 @@ class BandGenerator(Generator):
             seen_bands=True,
             genres=True,
             save_path=None,
+            reverse=False,
             **generation_args
     ):
 
@@ -227,7 +233,7 @@ class BandGenerator(Generator):
         ret = []
         num_iteration = 0
 
-        split_re = self._split_re()
+        split_re = self._split_re(reverse)
         t = tqdm(total=batch_size)
         device = self.forward_model.device
         input_ids = self.tokenizer.encode(SpecialTokens.BOS_TOKEN, return_tensors="pt").long().to(device)
@@ -308,9 +314,8 @@ class BandGenerator(Generator):
             filter_existing_bands = False
         # GENERATE BANDS:
 
-        split_re = self._split_re()
-
-        prefix = generation_input.prepare_input()
+        prefix, reverse = generation_input.prepare_input()
+        split_re = self._split_re(reverse)
         device = self.forward_model.device
         input_ids = self.tokenizer.encode(prefix, return_tensors="pt").long().to(device)
 

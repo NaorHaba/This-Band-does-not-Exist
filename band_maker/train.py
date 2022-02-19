@@ -45,6 +45,7 @@ from transformers import (
 
 from band_maker.band_generator import BandGenerator
 from band_maker.band_datasets import load_and_cache_examples, _sorted_checkpoints, _rotate_checkpoints
+from band_maker.custom_generate import decrease_temperature_gradually
 from band_maker.utils import MODEL_CLASSES, SpecialTokens
 
 try:
@@ -306,7 +307,14 @@ def evaluate(args, model: PreTrainedModel, tokenizer: PreTrainedTokenizer, prefi
                                   device=model.device)
         result.update(generator.evaluate_creativity(args.num_eval_creativity,
                                                     args.eval_creativity_max_iterations,
-                                                    max_length=args.block_size))
+                                                    args.reverse_dataset,
+                                                    top_k=300,
+                                                    num_return_sequences=12,
+                                                    max_length=min(args.block_size, tokenizer.model_max_length),
+                                                    temperature=2,
+                                                    transform_logits_warper=
+                                                    functools.partial(decrease_temperature_gradually, decrease_factor=0.8)
+                                                    ))
         logger.info(f"Done evaluating creativity in {time.time() - s}s")
 
     output_eval_file = os.path.join(eval_output_dir, prefix, "eval_results.txt")
@@ -353,6 +361,11 @@ def main():
         "--csv",
         action="store_true",
         help="Whether our data is csv formatted",
+    )
+    parser.add_argument(
+        "--reverse_dataset",
+        action="store_true",
+        help="Whether our data should be processed by song name first (for reverse model)",
     )
     parser.add_argument(
         "--eval_creativity_blacklist", type=str, help="Evaluate creativity of generation using a blacklist"
