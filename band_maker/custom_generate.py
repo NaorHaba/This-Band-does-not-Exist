@@ -14,7 +14,7 @@ import torch.distributed as dist
 def decrease_temperature_gradually(logits_warper, decrease_factor):
     if decrease_factor:
         assert 0 < decrease_factor < 1, "decrease_factor must be between 0 to 1"
-        logits_warper.temperature = max(1, logits_warper.temperature * decrease_factor)
+        logits_warper[0].temperature = max(1, logits_warper[0].temperature * decrease_factor)
     return logits_warper
 
 

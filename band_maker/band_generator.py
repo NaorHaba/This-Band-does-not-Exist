@@ -11,16 +11,102 @@ import torch
 import logging
 from tqdm import tqdm
 
-from band_datasets import Blacklist
+from band_maker.band_datasets import Blacklist
 from transformers import AutoModelWithLMHead, AutoTokenizer
 
 import os
 import csv
 
-from custom_generate import decrease_temperature_gradually, custom_sample
-from utils import SpecialTokens
+from band_maker.custom_generate import decrease_temperature_gradually, custom_sample
+from band_maker.utils import SpecialTokens
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class GeneratedBand:
+    band_name: str
+    genre: str
+    song_name: str
+    lyrics: str
+
+    @classmethod
+    def print_bands(cls, bands, f=sys.stdout):
+        for band in bands:
+            band_str = [band.band_name, f"/{band.genre}/"]
+            print(" ".join(band_str), file=f)
+            print(f"\t{band.song_name}", file=f)
+            print(f"\t{band.lyrics}", file=f)
+            print("----------------", file=f)
+
+
+@dataclass
+class GeneratedBandCandidate:
+    score: float
+    candidate: GeneratedBand
+
+
+@dataclass
+class GenerationInput:
+    band_name: str
+    genre: str
+    song_name: str
+
+    def prepare_input(self):
+        prefix = SpecialTokens.BOS_TOKEN
+        if self.band_name:
+            prefix += self.band_name
+            prefix += SpecialTokens.GNR_SEP
+            if self.genre:
+                prefix += self.genre
+                prefix += SpecialTokens.SNG_SEP
+                if self.song_name:
+                    prefix += self.song_name
+                    prefix += SpecialTokens.LRC_SEP
+        elif self.song_name:
+            prefix += self.song_name
+            prefix += SpecialTokens.GNR_SEP
+            if self.genre:
+                prefix += self.genre
+                prefix += SpecialTokens.SNG_SEP
+        elif self.genre:
+            raise RuntimeError  # todo better error
+
+        return prefix
+
+
+@dataclass
+class GenerationStats:
+    num_iterations: int = 0
+
+    num_items_considered: int = 0
+    num_failed_match: int = 0
+    num_blacklist_filtered: int = 0
+    num_seen_filtered: int = 0
+    num_genre_filter: int = 0
+
+    num_short_texts: int = 0
+
+    num_returned: int = 0
+    wall_time: float = 0.0
+
+    viable_candidates = []
+
+    def __str__(self):
+        return (
+                f"iterations={self.num_iterations} time={self.wall_time} | "
+                + ", ".join(
+                    f"{k} {v / self.num_items_considered:.2f}@{v}"
+                    for k, v in (
+                            ("items_considered", self.num_items_considered),
+                            ("failed_match", self.num_failed_match),
+                            ("blacklist_filtered", self.num_blacklist_filtered),
+                            ("seen_filtered", self.num_seen_filtered),
+                            ("short_definitions", self.num_short_texts),
+                            ("returned", self.num_returned),
+                        )
+                    )
+                )
 
 
 class Generator(ABC):
@@ -56,7 +142,6 @@ class Generator(ABC):
             input_ids,
             **generation_args
     ):
-        assert input_ids, f"Input ids is mandatory, received {input_ids}"
 
         return custom_sample(self.forward_model, input_ids,
                              pad_token_id=self.tokenizer.pad_token_id,
@@ -89,9 +174,9 @@ class BandGenerator(Generator):
     @staticmethod
     def _split_re():
         split_re_pat = (
-            f"^{re.escape(SpecialTokens.BOS_TOKEN)}(?P<band>.+?)"
+            f"^{re.escape(SpecialTokens.BOS_TOKEN)}(?P<band_name>.+?)"
             f"(?:{re.escape(SpecialTokens.GNR_SEP)}(?P<genre>.+?))"
-            f"(?:{re.escape(SpecialTokens.SNG_SEP)}(?P<song>.+?))"
+            f"(?:{re.escape(SpecialTokens.SNG_SEP)}(?P<song_name>.+?))"
             f"{re.escape(SpecialTokens.LRC_SEP)}(?P<lyrics>.+?)"
             f"{re.escape(SpecialTokens.EOS_TOKEN)}*"
         )
@@ -166,15 +251,15 @@ class BandGenerator(Generator):
                     stats.num_failed_match += 1
                     continue
 
-                band = m.group("band")  # band name
+                band_name = m.group("band_name")  # band name
                 genre = m.group("genre")  # genre
-                song = m.group("song")  # song name
+                song_name = m.group("song_name")  # song name
                 lyrics = m.group("lyrics")  # lyrics
 
                 generated_band = GeneratedBand(
-                    band=band and band.strip(),
+                    band_name=band_name and band_name.strip(),
                     genre=genre and genre.strip(),
-                    song=song and song,
+                    song_name=song_name and song_name,
                     lyrics=lyrics and lyrics
                 )
 
@@ -185,7 +270,7 @@ class BandGenerator(Generator):
 
                 t.update()
                 current_ret.append(generated_band)
-                seen_bands.add(band.strip().lower())
+                seen_bands.add(band_name.strip().lower())
 
                 t.update()
                 current_ret.append(generated_band)
@@ -200,7 +285,7 @@ class BandGenerator(Generator):
                         columns = ['band_name', 'genre', 'lyrics']
                         writer.writerow(columns)
                     generated_bands = current_ret
-                    rows = [[b.band, b.genre, b.lyrics] for b in generated_bands]
+                    rows = [[b.band_name, b.genre, b.lyrics] for b in generated_bands]
                     writer.writerows(rows)
 
             ret += current_ret
@@ -219,8 +304,8 @@ class BandGenerator(Generator):
             **generation_args
     ):
 
-        assert not (self.band_already_exists(GenerationInput.band_name) and filter_existing_bands), \
-            "Can't filter band name for existing band received"
+        if generation_input.band_name and filter_existing_bands and self.band_already_exists(generation_input.band_name):
+            filter_existing_bands = False
         # GENERATE BANDS:
 
         split_re = self._split_re()
@@ -238,15 +323,15 @@ class BandGenerator(Generator):
 
                 m = split_re.match(decoded)
                 if m:
-                    band = m.group("band")  # band name
+                    band_name = m.group("band_name")  # band name
                     genre = m.group("genre")  # genre
-                    song = m.group("song")  # song name
+                    song_name = m.group("song_name")  # song name
                     lyrics = m.group("lyrics")  # lyrics
 
                     generated_band = GeneratedBand(
-                        band=band and band.strip(),
+                        band_name=band_name and band_name.strip(),
                         genre=genre and genre.strip(),
-                        song=song and song,
+                        song_name=song_name and song_name,
                         lyrics=lyrics and lyrics
                     )
 
@@ -258,7 +343,7 @@ class BandGenerator(Generator):
                     else:
                         return generated_band
 
-        raise CantCreateBandError
+        # raise CantCreateBandError
 
     def pipeline_generated_tests(
             self,
@@ -268,13 +353,13 @@ class BandGenerator(Generator):
             seen_bands=None,
             genres=False
     ):
-        band, genre, lyrics = generated_band.band, generated_band.genre, generated_band.lyrics
+        band_name, genre, lyrics = generated_band.band_name, generated_band.genre, generated_band.lyrics
 
-        if existing_bands and self.band_already_exists(band):
+        if existing_bands and self.band_already_exists(band_name):
             stats.num_blacklist_filtered += 1
             return False
 
-        if seen_bands and self.seen_band(band, seen_bands):
+        if seen_bands and self.seen_band(band_name, seen_bands):
             stats.num_seen_filtered += 1
             return False
 
@@ -290,13 +375,13 @@ class BandGenerator(Generator):
 
         return True
 
-    def band_already_exists(self, band):
+    def band_already_exists(self, band_name):
         if not self.existing_bands:
             raise RuntimeError("existing_bands variable doesn't exist")
-        return self.existing_bands.contains(band)
+        return self.existing_bands.contains(band_name)
 
-    def seen_band(self, band, seen_bands):
-        return band.strip().lower() in seen_bands
+    def seen_band(self, band_name, seen_bands):
+        return band_name.strip().lower() in seen_bands
 
     @staticmethod
     def song_is_short(lyrics, min_lyrics_words=30):
@@ -306,89 +391,3 @@ class BandGenerator(Generator):
         if not self.genres:
             raise RuntimeError("genres variable doesn't exist")
         return genre not in self.genres
-
-
-@dataclass
-class GeneratedBand:
-    band: str
-    genre: str
-    song: str
-    lyrics: str
-
-    @classmethod
-    def print_bands(cls, bands, f=sys.stdout):
-        for band in bands:
-            band_str = [band.band, f"/{band.genre}/"]
-            print(" ".join(band_str), file=f)
-            print(f"\t{band.song}", file=f)
-            print(f"\t{band.lyrics}", file=f)
-            print("----------------", file=f)
-
-
-@dataclass
-class GeneratedBandCandidate:
-    score: float
-    candidate: GeneratedBand
-
-
-@dataclass
-class GenerationInput:
-    band_name: str
-    genre: str
-    song_name: str
-
-    def prepare_input(self):
-        prefix = SpecialTokens.BOS_TOKEN
-        if self.band_name:
-            prefix += self.band_name
-            prefix += SpecialTokens.GNR_SEP
-            if self.genre:
-                prefix += self.genre
-                prefix += SpecialTokens.SNG_SEP
-                if self.song_name:
-                    prefix += self.song_name
-                    prefix += SpecialTokens.LRC_SEP
-        elif self.song_name:
-            prefix += self.song_name
-            prefix += SpecialTokens.GNR_SEP
-            if self.genre:
-                prefix += self.genre
-                prefix += SpecialTokens.SNG_SEP
-        elif self.genre:
-            raise RuntimeError  # todo better error
-
-        return prefix
-
-
-@dataclass
-class GenerationStats:
-    num_iterations: int = 0
-
-    num_items_considered: int = 0
-    num_failed_match: int = 0
-    num_blacklist_filtered: int = 0
-    num_seen_filtered: int = 0
-    num_genre_filter: int = 0
-
-    num_short_texts: int = 0
-
-    num_returned: int = 0
-    wall_time: float = 0.0
-
-    viable_candidates = []
-
-    def __str__(self):
-        return (
-                f"iterations={self.num_iterations} time={self.wall_time} | "
-                + ", ".join(
-                    f"{k} {v / self.num_items_considered:.2f}@{v}"
-                    for k, v in (
-                            ("items_considered", self.num_items_considered),
-                            ("failed_match", self.num_failed_match),
-                            ("blacklist_filtered", self.num_blacklist_filtered),
-                            ("seen_filtered", self.num_seen_filtered),
-                            ("short_definitions", self.num_short_texts),
-                            ("returned", self.num_returned),
-                        )
-                    )
-                )

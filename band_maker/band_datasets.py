@@ -12,7 +12,7 @@ from torch.utils.data import Dataset
 from transformers import PreTrainedTokenizer
 from typing import List
 
-from utils import SpecialTokens, clean_text
+from band_maker.utils import SpecialTokens, clean_text
 
 logger = logging.getLogger(__name__)
 

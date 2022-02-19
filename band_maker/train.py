@@ -43,9 +43,9 @@ from transformers import (
     get_linear_schedule_with_warmup,
 )
 
-from band_generator import BandGenerator
-from band_datasets import load_and_cache_examples, _sorted_checkpoints, _rotate_checkpoints
-from utils import MODEL_CLASSES, SpecialTokens
+from band_maker.band_generator import BandGenerator
+from band_maker.band_datasets import load_and_cache_examples, _sorted_checkpoints, _rotate_checkpoints
+from band_maker.utils import MODEL_CLASSES, SpecialTokens
 
 try:
     from torch.utils.tensorboard import SummaryWriter
