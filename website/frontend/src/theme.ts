@@ -18,8 +18,8 @@ export const getAppTheme = () => {
                 secondary: grey[500],
             },
             background: {
-                default: grey[800],
-                paper: grey[900],
+                default: "#303030",
+                paper: "#424242",
             },
 
         },

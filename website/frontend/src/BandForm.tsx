@@ -1,5 +1,5 @@
 import { LoadingButton } from "@mui/lab";
-import { Box, MenuItem, TextField } from "@mui/material";
+import { Box, Button, MenuItem, TextField } from "@mui/material";
 import React from "react";
 
 interface BandFormProps {
@@ -11,6 +11,7 @@ interface BandFormProps {
   setGenre: (s: string) => void;
   setSongName: (s: string) => void;
   setTriggerQuery: (b: boolean) => void;
+  setWriteYourOwn: (b: boolean) => void;
 }
 
 export const BandForm: React.FC<BandFormProps> = (props) => {
@@ -23,6 +24,7 @@ export const BandForm: React.FC<BandFormProps> = (props) => {
     setGenre,
     setSongName,
     setTriggerQuery,
+    setWriteYourOwn,
   } = props;
 
   const possibleGenres = [
@@ -45,7 +47,6 @@ export const BandForm: React.FC<BandFormProps> = (props) => {
       </MenuItem>
     );
   });
-  console.log(genreOptions);
 
   return (
     <Box
@@ -66,6 +67,7 @@ export const BandForm: React.FC<BandFormProps> = (props) => {
         sx={{
           display: "flex",
           flexDirection: "row",
+          gap: 1,
         }}
       >
         <TextField
@@ -99,14 +101,34 @@ export const BandForm: React.FC<BandFormProps> = (props) => {
           helperText={genre === "naor" ? "Text field can't be naor" : null}
         />
       </Box>
-      <LoadingButton
-        variant="contained"
-        type="submit"
-        form={"bandForm"}
-        loading={status === "loading"}
+      <Box
+        sx={{
+          display: "flex",
+          flexDirection: "column",
+          gap: 1,
+          alignItems: "center",
+        }}
       >
-        Generate Band
-      </LoadingButton>
+        <LoadingButton
+          variant="contained"
+          type="submit"
+          form={"bandForm"}
+          loading={status === "loading"}
+        >
+          Generate Band
+        </LoadingButton>
+        <Button
+          variant="contained"
+          type="submit"
+          onClick={(e) => {
+            e.preventDefault();
+            setWriteYourOwn(false);
+          }}
+          form={"bandForm"}
+        >
+          Cancel
+        </Button>
+      </Box>
     </Box>
   );
 };

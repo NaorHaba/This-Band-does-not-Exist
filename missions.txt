@@ -6,12 +6,12 @@ Finish code
 
 Finish website
 	- finish decorating
-	- add "rate us"
-	- add credits and git link
+		- add "rate us" (add logic)
+		- add credits and git link (change message contents)
 	- prepare sample of examples
-		- add logic to sample and sample by genre
+		add logic to sample and sample by genre
 	- add restrictions to input fields
-	- add instructions
+	add instructions
 	- deploy (and restore api.py to backend folder)
 	
 Reverse model
