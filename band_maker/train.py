@@ -311,7 +311,7 @@ def evaluate(args, model: PreTrainedModel, tokenizer: PreTrainedTokenizer, prefi
                                                     top_k=300,
                                                     num_return_sequences=12,
                                                     max_length=min(args.block_size, tokenizer.model_max_length),
-                                                    temperature=2,
+                                                    temperature=2.0,
                                                     transform_logits_warper=
                                                     functools.partial(decrease_temperature_gradually, decrease_factor=0.8)
                                                     ))
