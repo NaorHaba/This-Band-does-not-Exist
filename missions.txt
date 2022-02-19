@@ -2,6 +2,7 @@ Finish code
 	- handle # TODO, # FIXME, irrelevant notes
 	- document
 	- README
+	- delete check.py
 
 Finish website
 	- finish decorating
@@ -11,6 +12,7 @@ Finish website
 		- add logic to sample and sample by genre
 	- add restrictions to input fields
 	- add instructions
+	- deploy (and restore api.py to backend folder)
 	
 Reverse model
 	train
