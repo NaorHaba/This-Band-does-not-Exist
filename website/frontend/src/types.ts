@@ -1,12 +1,12 @@
 
 
-export interface GenerationInput{
+export interface GenerationInput {
     band_name?: string,
     genre?: string,
     song_name?: string
 }
 
-export interface GeneratedBand{
+export interface Band {
     band_name: string,
     genre: string,
     song_name: string,
