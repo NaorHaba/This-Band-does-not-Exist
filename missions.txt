@@ -5,8 +5,8 @@ Finish code
 	- delete check.py
 
 Finish website
-	- finish decorating
-		- add "rate us" (add logic)
+	finish decorating
+		add "rate us" (add logic)
 		add credits and git link (change message contents)
 	- prepare sample of examples
 		add logic to sample and sample by genre
@@ -16,8 +16,8 @@ Finish website
 	
 Reverse model
 	train
-	- deploy to website
-	- check generation results on website
+	deploy to website
+	check generation results on website
 	
 Evaluation
 	- weak fake?
