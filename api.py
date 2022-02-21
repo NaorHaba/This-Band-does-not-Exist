@@ -14,9 +14,11 @@ from band_maker.band_generator import GenerationInput, BandGenerator, GeneratedB
 from band_maker.custom_generate import decrease_temperature_gradually
 
 logger = logging.getLogger(__name__)
+logger.setLevel('INFO')
 
 BAND_DATA_FILE = 'data/example.csv'  # FIXME
 BAND_COUNT = 2  # FIXME
+RATING_DATA_FILE = 'data/rating.json'
 
 app = Flask(__name__)
 
@@ -26,6 +28,26 @@ def hello():
     return Response("hello")
 
 
+# TODO add try-catch
+# TODO add logger info on input and current file values
+@app.route('/rating', methods=['POST'])
+@cross_origin()
+def update_rating():
+    rating_input = json.loads(request.data)
+    logger.info(f"received {rating_input} as rating input")
+    with open(RATING_DATA_FILE, 'r') as f:
+        rating_from_file = json.load(f)
+    if rating_input['ratingValue'] is not None:
+        rating_from_file['total_rating'] += int(rating_input['ratingValue'])
+        rating_from_file['count'] += 1
+        rating_from_file['avg_rating'] = rating_from_file['total_rating'] / rating_from_file['count']
+        with open(RATING_DATA_FILE, 'w') as f:
+            json.dump(rating_from_file, f)
+    return jsonify(rating_from_file)
+
+
+# TODO add try-catch
+# TODO add logger info on input and on returning values
 @app.route('/sample', methods=['POST'])
 @cross_origin()
 def sample_band():
@@ -42,6 +64,7 @@ def sample_band():
     return res
 
 
+# TODO add logger info on input and on returning values
 @app.route('/bands', methods=['POST'])
 @cross_origin()
 def generate_band():
@@ -76,5 +99,13 @@ if __name__ == '__main__':
                                                 blacklist_path='data/artists_blacklist.pickle',
                                                 genres_path='data/genres.pickle'
                                                 )
+    if not os.path.isfile(RATING_DATA_FILE):
+        with open(RATING_DATA_FILE, 'w') as f:
+            initial_rating = {
+                "total_rating": 0,
+                "count": 0,
+                "avg_rating": 0
+            }
+            json.dump(initial_rating, f)
     print('Starting server...')
     app.run(debug=True)  # TODO port=config.port

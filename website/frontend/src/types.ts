@@ -12,3 +12,7 @@ export interface Band {
     song_name: string,
     lyrics: string
 }
+
+export interface ratingObj {
+    ratingValue: number
+}

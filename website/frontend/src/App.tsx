@@ -9,16 +9,18 @@ import {
 import { Box } from "@mui/system";
 import React from "react";
 import { useQuery } from "react-query";
-import { submitForm } from "./api";
+import { submitForm, submitRating } from "./api";
 import "./App.css";
-import { BandForm } from "./BandForm";
+import { BandForm, input_contains_char } from "./BandForm";
 import { Footer } from "./Footer";
 import { GeneratedBand } from "./GeneratedBand";
-import { Band, GenerationInput } from "./types";
+import { Band, GenerationInput, ratingObj } from "./types";
 
 function App() {
   const writeYourOwnInstructions =
     "Make up your own band by inserting any input you like among `Band Name`, `Genre` or `Song Name`";
+  const rateUsInstructions =
+    "Tell us how authentic the band and its number 1 hit are in your opinion";
 
   const [triggerQuery, setTriggerQuery] = React.useState(true);
 
@@ -45,6 +47,9 @@ function App() {
       onSettled: () => {
         setTriggerQuery(false);
         setWriteYourOwn(false);
+        setBandName("");
+        setSongName("");
+        setGenre("");
       },
     }
   );
@@ -57,7 +62,9 @@ function App() {
       setGeneratedBand(data);
       remove();
     }
-  }, [status, data]);
+    if (!input_contains_char(bandName) || !input_contains_char(songName))
+      setTriggerQuery(false);
+  }, [status, data, bandName, songName]);
 
   return (
     <Box
@@ -86,7 +93,7 @@ function App() {
           }}
         />
       ) : (
-        <Box sx={{ mt: 5, width: 700 }}>
+        <Box sx={{ mt: 5, width: 700, mb: 4 }}>
           <Box
             sx={{
               display: "flex",
@@ -120,22 +127,24 @@ function App() {
                 </Button>
               </Tooltip>
             </Box>
-            {/* <Typography component="legend">Rate Our Generation:</Typography> */}
             <Box>
               <Typography component="legend" align="center">
                 Rate This
               </Typography>
-              <Rating
-                name="simple-controlled"
-                value={ratingValue}
-                onChange={(event, newValue) => {
-                  setRatingValue(newValue); // TODO
-                }}
-                sx={{
-                  alignContent: "center",
-                  alignItems: "center",
-                }}
-              />
+              <Tooltip title={rateUsInstructions}>
+                <Rating
+                  name="simple-controlled"
+                  value={ratingValue}
+                  onChange={(event, newValue) => {
+                    setRatingValue(newValue);
+                    submitRating({ ratingValue: newValue } as ratingObj);
+                  }}
+                  sx={{
+                    alignContent: "center",
+                    alignItems: "center",
+                  }}
+                />
+              </Tooltip>
             </Box>
           </Box>
           {generatedBand ? (

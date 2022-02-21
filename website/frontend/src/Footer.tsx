@@ -21,7 +21,24 @@ export const Footer: React.FC = () => {
           gap: 3,
         }}
       >
-        <Typography>Pretty Message 1</Typography>
+        {/* <Typography>Pretty Message 1</Typography> */}
+        <Box
+          sx={{
+            display: "flex",
+            gap: 0.75,
+            alignItems: "center",
+          }}
+        >
+          <Link
+            href="https://www.youtube.com/watch?v=dQw4w9WgXcQ&ab_channel=RickAstley"
+            underline="hover"
+            target="_blank"
+            rel="noopener"
+            color="white"
+          >
+            <Typography>Rick and Roll 🤟</Typography>
+          </Link>
+        </Box>
         <Box
           sx={{
             display: "flex",
@@ -39,24 +56,6 @@ export const Footer: React.FC = () => {
             <Typography>Github </Typography>
           </Link>
           <GitHubIcon sx={{ height: "18px", width: "18px" }} />
-        </Box>
-        <Box
-          sx={{
-            display: "flex",
-            gap: 0.75,
-            alignItems: "center",
-          }}
-        >
-          <Link
-            href="https://docs.google.com/forms/d/e/1FAIpQLSe7GbkAkIdTgJ3QkGmJMHhkIpjWz_I0ZX608FlxVLeT0cyJJQ/viewform?usp=sf_link"
-            underline="hover"
-            target="_blank"
-            rel="noopener"
-            color="white"
-          >
-            <Typography>Pretty Link 1</Typography>
-          </Link>
-          <InfoIcon sx={{ height: "18px", width: "18px" }} />
         </Box>
       </Box>
     </AppBar>

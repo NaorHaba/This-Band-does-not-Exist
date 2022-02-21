@@ -1,6 +1,6 @@
 import { parse } from "@vanillaes/csv";
 import axios from "axios";
-import { Band, GenerationInput } from "./types";
+import { Band, GenerationInput, ratingObj } from "./types";
 
 const API_URL = process.env.REACT_APP_API_URL;
 
@@ -14,3 +14,6 @@ export async function submitForm(input: GenerationInput): Promise<Band> {
     else return (await axios.post(`${API_URL}/bands`, input)).data
 }
 
+export async function submitRating(input: ratingObj) {
+    await axios.post(`${API_URL}/rating`, input);
+}

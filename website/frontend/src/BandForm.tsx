@@ -14,6 +14,11 @@ interface BandFormProps {
   setWriteYourOwn: (b: boolean) => void;
 }
 
+export function input_contains_char(input: string) {
+  const regex = /[a-zA-Z]/;
+  return input.length == 0 || regex.test(input);
+}
+
 export const BandForm: React.FC<BandFormProps> = (props) => {
   const {
     bandName,
@@ -54,7 +59,8 @@ export const BandForm: React.FC<BandFormProps> = (props) => {
       id={"bandForm"}
       onSubmit={(e: any) => {
         e.preventDefault();
-        setTriggerQuery(true);
+        if (input_contains_char(bandName) && input_contains_char(songName))
+          setTriggerQuery(true);
       }}
       sx={{
         display: "flex",
@@ -71,21 +77,26 @@ export const BandForm: React.FC<BandFormProps> = (props) => {
         }}
       >
         <TextField
-          error={genre === "naor"}
+          error={!input_contains_char(bandName)}
           label="Band Name"
           variant="outlined"
           value={bandName}
           onChange={(e) => setBandName(e.target.value)}
-          helperText={genre === "naor" ? "Text field can't be naor" : null}
+          helperText={
+            !input_contains_char(bandName)
+              ? "Must contain at least 1 alphabet character"
+              : null
+          }
+          sx={{
+            minWidth: 270,
+          }}
         />
         <TextField
-          error={genre === "naor"}
           label="Genre"
           variant="outlined"
           value={genre}
           select
           onChange={(e) => setGenre(e.target.value)}
-          helperText={genre === "naor" ? "Text field can't be naor" : null}
           sx={{
             minWidth: 100,
           }}
@@ -93,12 +104,19 @@ export const BandForm: React.FC<BandFormProps> = (props) => {
           {genreOptions}
         </TextField>
         <TextField
-          error={genre === "naor"}
+          error={!input_contains_char(songName)}
           label="Song Name"
           variant="outlined"
           value={songName}
           onChange={(e) => setSongName(e.target.value)}
-          helperText={genre === "naor" ? "Text field can't be naor" : null}
+          helperText={
+            !input_contains_char(songName)
+              ? "Must contain at least 1 alphabet character"
+              : null
+          }
+          sx={{
+            minWidth: 270,
+          }}
         />
       </Box>
       <Box
@@ -123,6 +141,10 @@ export const BandForm: React.FC<BandFormProps> = (props) => {
           onClick={(e) => {
             e.preventDefault();
             setWriteYourOwn(false);
+            setTriggerQuery(false);
+            setBandName("");
+            setSongName("");
+            setGenre("");
           }}
           form={"bandForm"}
         >

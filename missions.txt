@@ -7,10 +7,10 @@ Finish code
 Finish website
 	- finish decorating
 		- add "rate us" (add logic)
-		- add credits and git link (change message contents)
+		add credits and git link (change message contents)
 	- prepare sample of examples
 		add logic to sample and sample by genre
-	- add restrictions to input fields
+	add restrictions to input fields
 	add instructions
 	- deploy (and restore api.py to backend folder)
 	
