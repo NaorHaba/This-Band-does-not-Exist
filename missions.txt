@@ -13,6 +13,8 @@ Finish website
 	add restrictions to input fields
 	add instructions
 	- deploy (and restore api.py to backend folder)
+	- add: "Generated bands are not reviewed and may reflect bias in the training set" or something about "bad words" that may appear
+	  look at this-word website for reference (last line)
 	
 Reverse model
 	train
