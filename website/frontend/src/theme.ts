@@ -5,7 +5,6 @@ export const getAppTheme = () => {
     let theme = createTheme({
         palette:
         {
-            // palette values for dark mode
             primary: {
                 main: '#3f9ab5',
             },
