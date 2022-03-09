@@ -13,12 +13,15 @@ import pandas as pd
 from band_maker.band_generator import GenerationInput, BandGenerator, GeneratedBand
 from band_maker.custom_generate import decrease_temperature_gradually
 
+# from pywebio.platform.flask import start_server
+from pywebio.platform.remote_access import start_remote_access_service
+
 logger = logging.getLogger(__name__)
 logger.setLevel('INFO')
 
-BAND_DATA_FILE = 'data/example.csv'  # FIXME
+BAND_DATA_FILE = '../../data/example.csv'  # FIXME
 BAND_COUNT = 2  # FIXME
-RATING_DATA_FILE = 'data/rating.json'
+RATING_DATA_FILE = '../../data/rating.json'
 
 app = Flask(__name__)
 
@@ -91,13 +94,13 @@ def generate_band():
 
 
 if __name__ == '__main__':
-    band_forward_generator = BandGenerator('models/gpt2_forward_model',
-                                           blacklist_path='data/artists_blacklist.pickle',
-                                           genres_path='data/genres.pickle'
+    band_forward_generator = BandGenerator('../../models/gpt2_forward_model',
+                                           blacklist_path='../../data/artists_blacklist.pickle',
+                                           genres_path='../../data/genres.pickle'
                                            )
-    song_name_forward_generator = BandGenerator('models/gpt2_reverse_model',
-                                                blacklist_path='data/artists_blacklist.pickle',
-                                                genres_path='data/genres.pickle'
+    song_name_forward_generator = BandGenerator('../../models/gpt2_reverse_model',
+                                                blacklist_path='../../data/artists_blacklist.pickle',
+                                                genres_path='../../data/genres.pickle'
                                                 )
     if not os.path.isfile(RATING_DATA_FILE):
         with open(RATING_DATA_FILE, 'w') as f:
@@ -108,4 +111,5 @@ if __name__ == '__main__':
             }
             json.dump(initial_rating, f)
     print('Starting server...')
-    app.run(debug=True)  # TODO port=config.port
+    start_remote_access_service(local_port=5000)
+    app.run(host='0.0.0.0', port=5000, debug=False, threaded=True, use_evalex=False)
