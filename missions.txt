@@ -1,8 +1,7 @@
 Finish code
-	- handle # TODO, # FIXME, irrelevant notes
-	- document
+	handle # TODO, # FIXME, irrelevant notes
+	document
 	- README
-	- delete check.py
 
 Finish website
 	finish decorating

@@ -72,7 +72,7 @@ class GenerationInput:
                 prefix += self.genre
                 prefix += SpecialTokens.ART_SEP
         elif self.genre:
-            raise RuntimeError  # todo better error
+            raise RuntimeError("code shouldn't reach here")
 
         return prefix, reverse
 
@@ -194,7 +194,6 @@ class BandGenerator(Generator):
         split_re = re.compile(split_re_pat, flags=re.MULTILINE | re.DOTALL)
         return split_re
 
-    # TODO add "generation args" and pass with **
     def evaluate_creativity(self, num_to_generate, max_iteration, reverse=False, **generation_args):
         _, stats = self.generate_batch(batch_size=num_to_generate,
                                        max_iterations=max_iteration,
@@ -281,18 +280,8 @@ class BandGenerator(Generator):
                 t.update()
                 current_ret.append(generated_band)
 
-            if save_path:  # TODO add to func
-                if not os.path.isfile(save_path):
-                    f = open(save_path, 'a')
-                    f.close()
-                with open(save_path, 'a') as csv_file:
-                    writer = csv.writer(csv_file)
-                    if os.stat(save_path).st_size == 0:
-                        columns = ['band_name', 'genre', 'lyrics']
-                        writer.writerow(columns)
-                    generated_bands = current_ret
-                    rows = [[b.band_name, b.genre, b.lyrics] for b in generated_bands]
-                    writer.writerows(rows)
+            if save_path:
+                self.save_generation(save_path, current_ret)
 
             ret += current_ret
 
@@ -300,6 +289,19 @@ class BandGenerator(Generator):
         stats.wall_time = time.time() - start
 
         return ret[:batch_size], stats
+
+    @staticmethod
+    def save_generation(save_path, generated_bands):
+        if not os.path.isfile(save_path):
+            f = open(save_path, 'a')
+            f.close()
+        with open(save_path, 'a') as csv_file:
+            writer = csv.writer(csv_file)
+            if os.stat(save_path).st_size == 0:
+                columns = ['band_name', 'genre', 'lyrics']
+                writer.writerow(columns)
+            rows = [[b.band_name, b.genre, b.lyrics] for b in generated_bands]
+            writer.writerows(rows)
 
     def generate_by_input(
             self,
