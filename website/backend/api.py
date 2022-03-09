@@ -31,6 +31,7 @@ def hello():
     return Response("hello")
 
 
+
 # TODO add try-catch
 # TODO add logger info on input and current file values
 @app.route('/rating', methods=['POST'])
