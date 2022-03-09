@@ -116,6 +116,5 @@ dmypy.json
 # User-specific stuff:
 .idea/
 models/
-data/test.csv
-data/train.csv
+data/
 /generated_companies.csv
