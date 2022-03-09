@@ -101,6 +101,6 @@ if __name__ == '__main__':
                 "avg_rating": 0
             }
             json.dump(initial_rating, f)
-    print('Starting server...')
+    print('Starting server....')
     start_remote_access_service(local_port=5000)
     app.run(host='0.0.0.0', port=5000, debug=False, threaded=True, use_evalex=False)
