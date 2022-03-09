@@ -1,0 +1,19 @@
+on:
+  push:
+    branches:
+      - master
+
+name: Deploy client to Heroku
+
+jobs:
+  deploy-client:
+    name: Deploy Client
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - uses: akhileshns/heroku-deploy@v3.12.12
+        with:
+          heroku_api_key: ${{secrets.HEROKU_CLIENT_API_KEY}}
+          heroku_app_name: "this-band-does-not-exist"
+          heroku_email: "naorhabaxd@gmail.com"
+          appdir: "website/frontend"
