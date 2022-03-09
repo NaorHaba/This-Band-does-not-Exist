@@ -1,3 +1,4 @@
+import random
 from abc import ABC
 import pickle
 import re
@@ -64,6 +65,12 @@ class GenerationInput:
                 if self.song_name:
                     prefix += self.song_name
                     prefix += SpecialTokens.LRC_SEP
+            elif self.song_name:
+                prefix += random.sample(["Country", "Electronic", "Folk", "Hip-Hop", "Indie", "Jazz", "Metal", "Pop",
+                                         "R&B", "Rock"], 1)
+                prefix += SpecialTokens.SNG_SEP
+                prefix += self.song_name
+                prefix += SpecialTokens.LRC_SEP
         elif self.song_name:
             reverse = True
             prefix += self.song_name
