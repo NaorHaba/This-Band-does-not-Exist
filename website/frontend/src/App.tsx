@@ -34,7 +34,7 @@ function App() {
   const [writeYourOwn, setWriteYourOwn] = React.useState(false);
   const [ratingValue, setRatingValue] = React.useState<number | null>(2);
 
-  const [overloadError, setoverloadError] = React.useState("");
+  const [screenError, setScreenError] = React.useState("");
 
   const { status, data, error, isError, remove } = useQuery(
     "submitBandForm",
@@ -43,11 +43,7 @@ function App() {
         band_name: bandName,
         genre,
         song_name: songName,
-      } as GenerationInput).catch((err) => {
-        setoverloadError(
-          "The system is overloaded at the moment, please try again in a moment."
-        );
-      }),
+      } as GenerationInput),
     {
       enabled: triggerQuery,
       onSettled: () => {
@@ -62,11 +58,22 @@ function App() {
 
   React.useEffect(() => {
     if (isError) {
+      if (error && (error as any).response) {
+        let status = (error as any).response.status;
+        if (status === 500)
+          setScreenError(
+            "The system is overloaded at the moment, please try again in a moment."
+          );
+      } else {
+        setScreenError(
+          "The server is currently down, please contact us to know when it will be up again :)"
+        );
+      }
       console.log(error);
     }
     if (status === "success" && data) {
       setGeneratedBand(data);
-      setoverloadError("");
+      setScreenError("");
       remove();
     }
     if (!input_contains_char(bandName) || !input_contains_char(songName))
@@ -154,9 +161,9 @@ function App() {
               </Tooltip>
             </Box>
           </Box>
-          {overloadError ? (
+          {screenError ? (
             <Typography variant="overline" align="center">
-              {overloadError}
+              {screenError}
             </Typography>
           ) : generatedBand ? (
             <GeneratedBand {...generatedBand} />
