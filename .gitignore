@@ -118,3 +118,6 @@ dmypy.json
 models/
 data/
 /generated_companies.csv
+
+archive/
+material/
