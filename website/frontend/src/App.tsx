@@ -66,7 +66,7 @@ function App() {
           );
       } else {
         setScreenError(
-          "The server is currently down, please contact us to know when it will be up again :)"
+          "The server is currently down, please contact us to know when it will be up again :)" //
         );
       }
       console.log(error);
