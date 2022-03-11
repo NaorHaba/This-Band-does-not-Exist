@@ -136,7 +136,7 @@ function App() {
             </Box>
             <Box>
               <Typography component="legend" align="center">
-                Rate This
+                Rate This Band
               </Typography>
               <Tooltip title={rateUsInstructions}>
                 <Rating
