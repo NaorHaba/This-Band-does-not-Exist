@@ -59,5 +59,5 @@ data/genres.pickle
 Please notice that the above script is accessing a data file that is populated with all the band records we had.
 However, we process it using the parsing mechanism noted by `--csv` and according to the `--splits` and `--train_split_idx`, `--eval_splits_idx` arguments.
 
-You can use the generate_data.py file to generate new bands. <br>
+You can use the generate_data.py file to generate new bands. Change the batch-size parameter to decide how many bands to generate, and the save path parameter to choose a path to save the data. <br>
 You can also use the evaluation.py file to perform some evaluation on generated entities (or use it as a basis for the evaluation method you want for your project). 
