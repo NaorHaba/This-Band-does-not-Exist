@@ -72,16 +72,20 @@ def generate_band():
         generator = song_name_forward_generator
     else:
         generator = band_forward_generator
-    gen_band = generator.generate_by_input(gen_input,
-                                           temperature=2.0,
-                                           transform_logits_warper=partial(decrease_temperature_gradually,
-                                                                           decrease_factor=0.85),
-                                           top_k=300,
-                                           num_return_sequences=12,
-                                           max_length=1024
-                                           )
-    res = jsonify(gen_band)
-    return res
+    try:
+        gen_band = generator.generate_by_input(gen_input,
+                                               temperature=2.0,
+                                               transform_logits_warper=partial(decrease_temperature_gradually,
+                                                                               decrease_factor=0.85),
+                                               top_k=300,
+                                               num_return_sequences=12,
+                                               max_length=1024
+                                               )
+        res = jsonify(gen_band)
+        return res
+    except RuntimeError as err:
+        logger.error(err)
+        return Response("The system is overloaded at the moment, please try again later.", status=500)
 
 
 if __name__ == '__main__':
@@ -104,3 +108,4 @@ if __name__ == '__main__':
     print('Starting server....')
     start_remote_access_service(local_port=5000)
     app.run(host='0.0.0.0', port=5000, debug=False, threaded=True, use_evalex=False)
+    # app.run(debug=False)

@@ -34,6 +34,8 @@ function App() {
   const [writeYourOwn, setWriteYourOwn] = React.useState(false);
   const [ratingValue, setRatingValue] = React.useState<number | null>(2);
 
+  const [overloadError, setoverloadError] = React.useState("");
+
   const { status, data, error, isError, remove } = useQuery(
     "submitBandForm",
     () =>
@@ -41,7 +43,11 @@ function App() {
         band_name: bandName,
         genre,
         song_name: songName,
-      } as GenerationInput),
+      } as GenerationInput).catch((err) => {
+        setoverloadError(
+          "The system is overloaded at the moment, please try again in a moment."
+        );
+      }),
     {
       enabled: triggerQuery,
       onSettled: () => {
@@ -56,10 +62,11 @@ function App() {
 
   React.useEffect(() => {
     if (isError) {
-      console.log(error); // TODO
+      console.log(error);
     }
     if (status === "success" && data) {
       setGeneratedBand(data);
+      setoverloadError("");
       remove();
     }
     if (!input_contains_char(bandName) || !input_contains_char(songName))
@@ -147,7 +154,11 @@ function App() {
               </Tooltip>
             </Box>
           </Box>
-          {generatedBand ? (
+          {overloadError ? (
+            <Typography variant="overline" align="center">
+              {overloadError}
+            </Typography>
+          ) : generatedBand ? (
             <GeneratedBand {...generatedBand} />
           ) : (
             <CircularProgress />
