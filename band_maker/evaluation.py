@@ -13,7 +13,6 @@ def split_to_ngram(text, n):
 def ngram_dist(song_lyrics, n, max_len, delta=0.5):
     # delta is the weight for length penalty
     # this function needs to be maximized
-    # TODO: consider the length (maybe we would like longer and not shorter, but this way yields the best results
     ngrams = split_to_ngram(song_lyrics, n)
     consecutive_ngrams = 0
     for i in range(len(ngrams) - 1):
