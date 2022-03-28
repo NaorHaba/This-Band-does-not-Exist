@@ -62,7 +62,7 @@ function App() {
         let status = (error as any).response.status;
         if (status === 500)
           setScreenError(
-            "The system is overloaded at the moment, please try again in a moment"
+            "The system is overloaded at the moment, please try again in a moment."
           );
       } else {
         setScreenError(
