@@ -1,3 +1,6 @@
+![image](https://github.com/NaorHaba/This-Band-does-not-Exist/assets/69202720/092707fe-00d6-479a-9cda-d32e95d3320b)
+
+
 # This-Band-does-not-Exist
 
 This repository was created as a final project to the Technion course _Natural Language Processing (NLP)_. <BR>
